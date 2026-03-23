@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Sun icon for the app launcher -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Sun body -->
+    <path
+        android:fillColor="#FFD700"
+        android:pathData="M54,42 A12,12 0 1 1 53.99,42 Z" />
+
+    <!-- Sun rays (8 rays) -->
+    <path
+        android:strokeColor="#FFD700"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:pathData="M54,28 L54,24
+                          M54,78 L54,74
+                          M40,32 L37,29
+                          M71,67 L68,64
+                          M68,32 L71,29
+                          M37,67 L40,64
+                          M28,54 L24,54
+                          M84,54 L80,54" />
+
+    <!-- Horizon line -->
+    <path
+        android:strokeColor="#FF9F43"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:pathData="M24,66 L84,66" />
+
+    <!-- Rising sun arc below horizon -->
+    <path
+        android:strokeColor="#FF6B43"
+        android:strokeWidth="2.5"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M30,66 A24,24 0 0 1 78,66" />
+
+</vector>

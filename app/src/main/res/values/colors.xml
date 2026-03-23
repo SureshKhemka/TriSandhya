@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Backgrounds -->
+    <color name="bg_deep">#0F0F1A</color>
+    <color name="card_bg">#1A1A2E</color>
+    <color name="card_stroke">#2A2A4A</color>
+    <color name="divider">#252540</color>
+
+    <!-- Text -->
+    <color name="text_primary">#F0F0FF</color>
+    <color name="text_secondary">#8888AA</color>
+
+    <!-- Accent / brand -->
+    <color name="accent">#7C6AF7</color>
+    <color name="accent_dark">#5B4FD4</color>
+
+    <!-- Solar time colors -->
+    <color name="sunrise_color">#FF9F43</color>
+    <color name="solar_noon_color">#FFD700</color>
+    <color name="sunset_color">#FF6B6B</color>
+
+    <!-- Switch colors -->
+    <color name="switch_thumb_on">#7C6AF7</color>
+    <color name="switch_thumb_off">#555577</color>
+    <color name="switch_track_on">#4A3DB0</color>
+    <color name="switch_track_off">#2A2A4A</color>
+
+    <!-- System / Material -->
+    <color name="purple_200">#FFBB86FC</color>
+    <color name="purple_500">#FF6200EE</color>
+    <color name="purple_700">#FF3700B3</color>
+    <color name="teal_200">#FF03DAC5</color>
+    <color name="teal_700">#FF018786</color>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+</resources>
