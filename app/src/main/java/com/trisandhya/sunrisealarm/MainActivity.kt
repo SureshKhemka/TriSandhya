@@ -153,20 +153,27 @@ class MainActivity : AppCompatActivity() {
 
         binding.tvTodayDate.text = state.today.format(dateFormat)
 
-        state.rows.forEach { row -> renderRow(row) }
+        state.rows.forEach { row -> renderRow(row, state.hasLocation) }
 
         renderNextAlarm(state)
         renderBanner(state)
     }
 
-    private fun renderRow(row: JunctionRow) {
+    private fun renderRow(row: JunctionRow, hasLocation: Boolean) {
         val rowBinding = rowBindings.getValue(row.junction)
 
         rowBinding.tvIcon.text = icons[row.junction]
         rowBinding.tvName.text = getString(row.junction.labelRes)
         rowBinding.tvTime.setTextColor(ContextCompat.getColor(this, row.junction.colorRes))
-        rowBinding.tvTime.text = row.time?.format(timeFormat)
-            ?: getString(R.string.sun_does_not_reach)
+
+        // A null time means two different things. Without a location nothing has been
+        // computed yet; with one, the sun genuinely does not reach that junction today.
+        // Saying "does not occur today" in the first case is just wrong.
+        rowBinding.tvTime.text = when {
+            row.time != null -> row.time.format(timeFormat)
+            hasLocation -> getString(R.string.sun_does_not_reach)
+            else -> getString(R.string.time_placeholder)
+        }
 
         // Detach before setting checked so restoring persisted state does not look
         // like a user toggle and re-fire scheduling.
