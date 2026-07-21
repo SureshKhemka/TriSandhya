@@ -5,59 +5,72 @@
 
     <!-- Labels -->
     <string name="label_location">Your Location</string>
-    <string name="label_tomorrows_times">Tomorrow\'s Solar Times</string>
-    <string name="alarms_for">Alarms for %1$s</string>
+    <string name="label_todays_times">Today\'s Solar Times</string>
+    <string name="time_placeholder">--:--</string>
 
     <!-- Solar times -->
     <string name="sunrise">Sunrise</string>
     <string name="solar_noon">Solar Noon</string>
     <string name="sunset">Sunset</string>
 
-    <!-- Alarm labels (shown in Clock app) -->
-    <string name="alarm_label_sunrise">🌅 Sunrise (TriSandhya)</string>
-    <string name="alarm_label_solar_noon">☀️ Solar Noon (TriSandhya)</string>
-    <string name="alarm_label_sunset">🌇 Sunset (TriSandhya)</string>
-
     <!-- Buttons -->
-    <string name="btn_set_alarms">Set Alarms for Tomorrow</string>
     <string name="btn_refresh">Refresh</string>
+    <string name="fix_it">Fix this</string>
+    <string name="dismiss">Dismiss</string>
+    <string name="open_settings">Settings</string>
+    <string name="retry">Retry</string>
+
+    <!-- Offsets -->
+    <string name="offset_at_time">At the exact time</string>
+    <string name="offset_minutes_before">%1$d min before</string>
+    <string name="offset_dialog_title">Remind me…</string>
 
     <!-- Status messages -->
     <string name="detecting">Detecting location…</string>
     <string name="status_getting_location">Getting your location…</string>
     <string name="status_resolving_location">Resolving location name…</string>
-    <string name="status_fetching_times">Fetching sunrise/sunset times…</string>
-    <string name="status_times_ready">Times shown in your local timezone</string>
+    <string name="no_location_yet">Tap refresh to detect your location.</string>
+
+    <!-- Next alarm summary -->
+    <string name="next_alarm_summary">Next: %1$s %2$s</string>
+    <string name="in_minutes">in %1$d min</string>
+    <string name="in_hours">in %1$d h</string>
+    <plurals name="in_days">
+        <item quantity="one">tomorrow</item>
+        <item quantity="other">in %d days</item>
+    </plurals>
+    <string name="sun_does_not_reach">Does not occur today</string>
 
     <!-- Info text -->
-    <string name="info_toggle">Toggle the switches to choose which alarms to create.</string>
-    <string name="info_clock_app">Alarms are added directly to your system Clock app.</string>
+    <string name="info_auto_daily">Alarms re-arm themselves every day using times computed for your location — no need to reopen the app.</string>
+
+    <!-- Alarm feedback -->
+    <string name="alarm_scheduled">Alarm set — rings %1$s</string>
+    <string name="alarm_cancelled">%1$s alarm turned off</string>
+    <string name="error_could_not_schedule">Could not schedule that alarm. Check your location.</string>
+
+    <!-- Alarm notification -->
+    <string name="channel_alarms">Sandhya alarms</string>
+    <string name="channel_alarms_description">Alarms for sunrise, solar noon, and sunset</string>
+    <string name="alarm_title">%1$s</string>
+    <string name="alarm_body">It\'s time — %1$s</string>
+    <string name="alarm_screen_subtitle">Time for your sandhya.</string>
+
+    <!-- Permission banners -->
+    <string name="banner_exact_alarm">Exact alarms are turned off for TriSandhya, so alarms may fire late. Enable them for on-time reminders.</string>
+    <string name="banner_notifications">Notifications are blocked, so alarms will be scheduled but you won\'t see or hear them.</string>
 
     <!-- Errors -->
-    <string name="error_location_permission">Location permission is required. Please grant it to use this app.</string>
-    <string name="error_location_unavailable">Could not get location. Please ensure GPS is enabled and try again.</string>
+    <string name="error_location_permission">Location permission is required to compute your solar times.</string>
+    <string name="error_location_unavailable">Could not get a location fix. Check that location is enabled.</string>
     <string name="error_location_failed">Location error: %1$s</string>
-    <string name="error_api_status">API returned status: %1$s</string>
-    <string name="error_network">Network error: %1$s</string>
-    <string name="error_parse">Could not parse times: %1$s</string>
-    <string name="error_no_alarm_selected">Please select at least one alarm.</string>
-
-    <!-- Alarm results -->
-    <string name="alarm_set_all_failed">Could not set alarms. Is a Clock app installed?</string>
-    <string name="alarm_set_partial">Set %1$d alarm(s) successfully. %2$d failed.</string>
-
-    <!-- Plurals -->
-    <plurals name="alarm_set_success">
-        <item quantity="one">%d alarm set successfully!</item>
-        <item quantity="other">%d alarms set successfully!</item>
-    </plurals>
 
     <!-- Content descriptions -->
     <string name="cd_refresh">Refresh location and times</string>
 
     <!-- Permission rationale -->
     <string name="location_rationale_title">Location Needed</string>
-    <string name="location_rationale_message">TriSandhya needs your location to calculate accurate sunrise, solar noon, and sunset times for your area.</string>
+    <string name="location_rationale_message">TriSandhya needs your location to calculate accurate sunrise, solar noon, and sunset times for your area. Your location never leaves your device.</string>
     <string name="grant">Grant</string>
     <string name="cancel">Cancel</string>
 </resources>
