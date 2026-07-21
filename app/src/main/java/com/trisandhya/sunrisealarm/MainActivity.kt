@@ -1,58 +1,77 @@
 package com.trisandhya.sunrisealarm
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
-import android.location.Geocoder
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.view.View
-import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
-import com.google.android.gms.tasks.CancellationTokenSource
+import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.material.snackbar.Snackbar
-import com.trisandhya.sunrisealarm.alarm.AlarmHelper
-import com.trisandhya.sunrisealarm.api.RetrofitClient
+import com.trisandhya.sunrisealarm.data.SandhyaPrefs
 import com.trisandhya.sunrisealarm.databinding.ActivityMainBinding
-import kotlinx.coroutines.Dispatchers
+import com.trisandhya.sunrisealarm.databinding.ItemJunctionRowBinding
+import com.trisandhya.sunrisealarm.model.Junction
+import com.trisandhya.sunrisealarm.util.RelativeTime
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Calendar
+import java.time.format.DateTimeFormatter
 import java.util.Locale
-import java.util.TimeZone
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
+    private val viewModel: MainViewModel by viewModels()
 
-    private val fusedLocationClient by lazy {
-        LocationServices.getFusedLocationProviderClient(this)
-    }
+    private val timeFormat = DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault())
+    private val dateFormat = DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy", Locale.getDefault())
+    private val nextFormat = DateTimeFormatter.ofPattern("EEE h:mm a", Locale.getDefault())
 
-    // Store parsed Calendar objects for alarm creation (in device local time)
-    private var sunriseCalendar: Calendar? = null
-    private var solarNoonCalendar: Calendar? = null
-    private var sunsetCalendar: Calendar? = null
+    private val icons = mapOf(
+        Junction.SUNRISE to "🌅",
+        Junction.SOLAR_NOON to "☀️",
+        Junction.SUNSET to "🌇"
+    )
+
+    private lateinit var rowBindings: Map<Junction, ItemJunctionRowBinding>
 
     // ----------------------------------------------------------------------------------
-    // Permission launcher
+    // Permission launchers
     // ----------------------------------------------------------------------------------
 
     private val locationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        val granted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
-                permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
-        if (granted) {
-            fetchCurrentLocation()
+        val fine = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
+        val coarse = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (fine || coarse) {
+            viewModel.refreshLocation(fine, coarse)
         } else {
-            showError(getString(R.string.error_location_permission))
+            // A plain denial is recoverable by asking again; a permanent one is not,
+            // so send those users somewhere they can actually undo it.
+            val canAskAgain = shouldShowRequestPermissionRationale(
+                Manifest.permission.ACCESS_FINE_LOCATION
+            )
+            showError(
+                getString(R.string.error_location_permission),
+                if (canAskAgain) ErrorAction.RETRY else ErrorAction.OPEN_APP_SETTINGS
+            )
         }
+    }
+
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (!granted) updateBanner()
     }
 
     // ----------------------------------------------------------------------------------
@@ -64,66 +83,174 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        setupStaticUI()
-        checkLocationPermissionAndFetch()
+        rowBindings = mapOf(
+            Junction.SUNRISE to binding.rowSunrise,
+            Junction.SOLAR_NOON to binding.rowSolarNoon,
+            Junction.SUNSET to binding.rowSunset
+        )
+
+        binding.btnRefresh.setOnClickListener { requestLocation() }
+
+        observeState()
+        observeEvents()
+
+        maybeRequestNotificationPermission()
+
+        // Only auto-request location on a genuinely first run. On later launches the
+        // cached fix already renders the screen, so an unprompted dialog would be noise.
+        if (!SandhyaPrefs(this).hasLocation()) {
+            requestLocation()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // The user may have changed exact-alarm or notification settings while away,
+        // and the date may have rolled over.
+        viewModel.recompute()
+        viewModel.refreshExactAlarmWarning()
+        updateBanner()
     }
 
     // ----------------------------------------------------------------------------------
-    // UI Setup
+    // State
     // ----------------------------------------------------------------------------------
 
-    private fun setupStaticUI() {
-        // Show tomorrow's date in the header card
-        val tomorrow = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 1) }
-        val dateFormat = SimpleDateFormat("EEEE, MMMM dd, yyyy", Locale.getDefault())
-        binding.tvTomorrowDate.text = getString(R.string.alarms_for, dateFormat.format(tomorrow.time))
+    private fun observeState() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.state.collect { render(it) }
+            }
+        }
+    }
 
-        // Refresh / retry button
-        binding.btnRefresh.setOnClickListener {
-            checkLocationPermissionAndFetch()
+    private fun observeEvents() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.events.collect { event ->
+                    when (event) {
+                        is UiEvent.Message ->
+                            Snackbar.make(binding.root, event.text, Snackbar.LENGTH_SHORT).show()
+                        is UiEvent.Error ->
+                            showError(event.text, event.action)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun render(state: UiState) {
+        binding.progressBar.visibility = if (state.loading) View.VISIBLE else View.GONE
+
+        binding.tvStatus.visibility = if (state.statusText != null) View.VISIBLE else View.GONE
+        state.statusText?.let { binding.tvStatus.text = it }
+
+        binding.tvLocation.text = when {
+            state.locationName != null -> state.locationName
+            state.loading -> getString(R.string.detecting)
+            else -> getString(R.string.no_location_yet)
         }
 
-        // Set alarms button
-        binding.btnSetAlarms.setOnClickListener {
-            setSelectedAlarms()
+        binding.tvTodayDate.text = state.today.format(dateFormat)
+
+        state.rows.forEach { row -> renderRow(row) }
+
+        renderNextAlarm(state)
+        renderBanner(state)
+    }
+
+    private fun renderRow(row: JunctionRow) {
+        val rowBinding = rowBindings.getValue(row.junction)
+
+        rowBinding.tvIcon.text = icons[row.junction]
+        rowBinding.tvName.text = getString(row.junction.labelRes)
+        rowBinding.tvTime.setTextColor(ContextCompat.getColor(this, row.junction.colorRes))
+        rowBinding.tvTime.text = row.time?.format(timeFormat)
+            ?: getString(R.string.sun_does_not_reach)
+
+        // Detach before setting checked so restoring persisted state does not look
+        // like a user toggle and re-fire scheduling.
+        rowBinding.switchEnabled.setOnCheckedChangeListener(null)
+        rowBinding.switchEnabled.isChecked = row.enabled
+        rowBinding.switchEnabled.setOnCheckedChangeListener { _, isChecked ->
+            viewModel.setEnabled(row.junction, isChecked)
+        }
+        rowBinding.switchEnabled.contentDescription = getString(row.junction.labelRes)
+
+        rowBinding.btnOffset.text = offsetLabel(row.offsetMinutes)
+        rowBinding.btnOffset.setOnClickListener { showOffsetDialog(row.junction, row.offsetMinutes) }
+
+        rowBinding.tvNext.text = if (row.enabled && row.nextFireAt != null) {
+            row.nextFireAt.format(nextFormat)
+        } else {
+            ""
+        }
+    }
+
+    private fun renderNextAlarm(state: UiState) {
+        val next = state.nextAlarm
+        if (next == null) {
+            binding.tvNextAlarm.visibility = View.GONE
+            return
+        }
+        binding.tvNextAlarm.visibility = View.VISIBLE
+        binding.tvNextAlarm.text = getString(
+            R.string.next_alarm_summary,
+            getString(next.first.labelRes),
+            RelativeTime.format(this, next.second)
+        )
+    }
+
+    private fun offsetLabel(minutes: Int): String =
+        if (minutes == 0) {
+            getString(R.string.offset_at_time)
+        } else {
+            getString(R.string.offset_minutes_before, minutes)
         }
 
-        // Initially hide dynamic sections
-        binding.cardResults.visibility = View.GONE
-        binding.btnSetAlarms.visibility = View.GONE
-        binding.layoutAlarmInfo.visibility = View.GONE
+    // ----------------------------------------------------------------------------------
+    // Offsets
+    // ----------------------------------------------------------------------------------
+
+    private fun showOffsetDialog(junction: Junction, current: Int) {
+        val choices = SandhyaPrefs.OFFSET_CHOICES
+        val labels = choices.map { offsetLabel(it) }.toTypedArray()
+        val checked = choices.indexOf(current).takeIf { it >= 0 } ?: 0
+
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.offset_dialog_title))
+            .setSingleChoiceItems(labels, checked) { dialog, which ->
+                viewModel.setOffsetMinutes(junction, choices[which])
+                dialog.dismiss()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     // ----------------------------------------------------------------------------------
-    // Location Permission
+    // Permissions
     // ----------------------------------------------------------------------------------
 
-    private fun checkLocationPermissionAndFetch() {
-        val fineGranted = ContextCompat.checkSelfPermission(
-            this, Manifest.permission.ACCESS_FINE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
-
-        val coarseGranted = ContextCompat.checkSelfPermission(
-            this, Manifest.permission.ACCESS_COARSE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
+    private fun requestLocation() {
+        val fine = hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+        val coarse = hasPermission(Manifest.permission.ACCESS_COARSE_LOCATION)
 
         when {
-            fineGranted || coarseGranted -> fetchCurrentLocation()
+            fine || coarse -> viewModel.refreshLocation(fine, coarse)
 
-            shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION) -> {
+            shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION) ->
                 AlertDialog.Builder(this)
                     .setTitle(R.string.location_rationale_title)
                     .setMessage(R.string.location_rationale_message)
-                    .setPositiveButton(R.string.grant) { _, _ -> requestLocationPermission() }
+                    .setPositiveButton(R.string.grant) { _, _ -> launchLocationRequest() }
                     .setNegativeButton(R.string.cancel, null)
                     .show()
-            }
 
-            else -> requestLocationPermission()
+            else -> launchLocationRequest()
         }
     }
 
-    private fun requestLocationPermission() {
+    private fun launchLocationRequest() {
         locationPermissionLauncher.launch(
             arrayOf(
                 Manifest.permission.ACCESS_FINE_LOCATION,
@@ -132,262 +259,80 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
-    // ----------------------------------------------------------------------------------
-    // Location Fetching
-    // ----------------------------------------------------------------------------------
-
-    private fun fetchCurrentLocation() {
-        showLoading(true)
-        setStatus(getString(R.string.status_getting_location))
-        resetResults()
-
-        val hasFinePerm = ContextCompat.checkSelfPermission(
-            this, Manifest.permission.ACCESS_FINE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
-
-        val hasCoarsePerm = ContextCompat.checkSelfPermission(
-            this, Manifest.permission.ACCESS_COARSE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
-
-        if (!hasFinePerm && !hasCoarsePerm) {
-            showError(getString(R.string.error_location_permission))
-            return
-        }
-
-        val priority = if (hasFinePerm)
-            Priority.PRIORITY_HIGH_ACCURACY
-        else
-            Priority.PRIORITY_BALANCED_POWER_ACCURACY
-
-        val cancellationToken = CancellationTokenSource()
-
-        fusedLocationClient
-            .getCurrentLocation(priority, cancellationToken.token)
-            .addOnSuccessListener { location ->
-                if (location != null) {
-                    onLocationObtained(location.latitude, location.longitude)
-                } else {
-                    // Fall back to last known location
-                    fusedLocationClient.lastLocation
-                        .addOnSuccessListener { lastLoc ->
-                            if (lastLoc != null) {
-                                onLocationObtained(lastLoc.latitude, lastLoc.longitude)
-                            } else {
-                                showError(getString(R.string.error_location_unavailable))
-                            }
-                        }
-                        .addOnFailureListener { e ->
-                            showError(getString(R.string.error_location_failed, e.message))
-                        }
-                }
-            }
-            .addOnFailureListener { e ->
-                showError(getString(R.string.error_location_failed, e.message))
-            }
+    private fun maybeRequestNotificationPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (hasPermission(Manifest.permission.POST_NOTIFICATIONS)) return
+        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
-    private fun onLocationObtained(lat: Double, lng: Double) {
-        setStatus(getString(R.string.status_resolving_location))
+    private fun hasPermission(permission: String) =
+        ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 
-        lifecycleScope.launch {
-            // Reverse geocode on IO thread
-            val locationName = withContext(Dispatchers.IO) {
-                resolveLocationName(lat, lng)
+    // ----------------------------------------------------------------------------------
+    // Banner
+    // ----------------------------------------------------------------------------------
+
+    private fun updateBanner() = renderBanner(viewModel.state.value)
+
+    /**
+     * Surfaces the two settings that silently break alarms: exact-alarm permission
+     * and blocked notifications. Both leave the app looking like it works.
+     */
+    private fun renderBanner(state: UiState) {
+        val notificationsBlocked = !NotificationManagerCompat.from(this).areNotificationsEnabled()
+
+        when {
+            state.needsExactAlarmPermission -> showBanner(R.string.banner_exact_alarm) {
+                openExactAlarmSettings()
             }
-
-            binding.tvLocation.text = locationName
-            fetchSunriseSunsetTimes(lat, lng)
+            notificationsBlocked && state.rows.any { it.enabled } ->
+                showBanner(R.string.banner_notifications) { openAppSettings() }
+            else -> binding.cardPermissionBanner.visibility = View.GONE
         }
     }
 
-    private fun resolveLocationName(lat: Double, lng: Double): String {
-        return try {
-            val geocoder = Geocoder(this, Locale.getDefault())
-            @Suppress("DEPRECATION")
-            val addresses = geocoder.getFromLocation(lat, lng, 1)
-            if (!addresses.isNullOrEmpty()) {
-                val addr = addresses[0]
-                buildString {
-                    addr.locality?.let { append(it) }
-                    addr.adminArea?.let {
-                        if (isNotEmpty()) append(", ")
-                        append(it)
-                    }
-                    addr.countryName?.let {
-                        if (isNotEmpty()) append(", ")
-                        append(it)
-                    }
-                }.ifEmpty { formatCoords(lat, lng) }
-            } else {
-                formatCoords(lat, lng)
-            }
-        } catch (e: Exception) {
-            formatCoords(lat, lng)
-        }
+    private fun showBanner(messageRes: Int, action: () -> Unit) {
+        binding.cardPermissionBanner.visibility = View.VISIBLE
+        binding.tvBannerText.setText(messageRes)
+        binding.btnBannerAction.setOnClickListener { action() }
     }
 
-    private fun formatCoords(lat: Double, lng: Double) = "%.4f°, %.4f°".format(lat, lng)
-
-    // ----------------------------------------------------------------------------------
-    // API Call
-    // ----------------------------------------------------------------------------------
-
-    private fun fetchSunriseSunsetTimes(lat: Double, lng: Double) {
-        setStatus(getString(R.string.status_fetching_times))
-
-        lifecycleScope.launch {
-            try {
-                // Tomorrow's date in yyyy-MM-dd format (local timezone)
-                val tomorrow = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 1) }
-                val apiDateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-                val dateString = apiDateFormat.format(tomorrow.time)
-
-                val response = withContext(Dispatchers.IO) {
-                    RetrofitClient.api.getSunriseSunset(
-                        lat = lat,
-                        lng = lng,
-                        date = dateString,
-                        formatted = 0   // Returns ISO 8601 UTC
-                    )
-                }
-
-                if (response.status == "OK") {
-                    displaySolarTimes(
-                        sunriseUtc = response.results.sunrise,
-                        solarNoonUtc = response.results.solarNoon,
-                        sunsetUtc = response.results.sunset
-                    )
-                } else {
-                    showError(getString(R.string.error_api_status, response.status))
-                }
-
-            } catch (e: Exception) {
-                showError(getString(R.string.error_network, e.message ?: "Unknown error"))
-            }
-        }
-    }
-
-    // ----------------------------------------------------------------------------------
-    // Display Results
-    // ----------------------------------------------------------------------------------
-
-    private fun displaySolarTimes(sunriseUtc: String, solarNoonUtc: String, sunsetUtc: String) {
-        try {
-            // Parse ISO 8601 UTC timestamps
-            val isoParser = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US).apply {
-                timeZone = TimeZone.getTimeZone("UTC")
-            }
-
-            val displayFormat = SimpleDateFormat("hh:mm a", Locale.getDefault()).apply {
-                timeZone = TimeZone.getDefault()
-            }
-
-            val sunriseDate = isoParser.parse(sunriseUtc)!!
-            val solarNoonDate = isoParser.parse(solarNoonUtc)!!
-            val sunsetDate = isoParser.parse(sunsetUtc)!!
-
-            // Store as Calendar (local timezone) for alarm creation
-            sunriseCalendar = Calendar.getInstance().apply { time = sunriseDate }
-            solarNoonCalendar = Calendar.getInstance().apply { time = solarNoonDate }
-            sunsetCalendar = Calendar.getInstance().apply { time = sunsetDate }
-
-            // Update UI
-            binding.tvSunriseTime.text = displayFormat.format(sunriseDate)
-            binding.tvSolarNoonTime.text = displayFormat.format(solarNoonDate)
-            binding.tvSunsetTime.text = displayFormat.format(sunsetDate)
-
-            // Show results section
-            showLoading(false)
-            binding.cardResults.visibility = View.VISIBLE
-            binding.btnSetAlarms.visibility = View.VISIBLE
-            binding.layoutAlarmInfo.visibility = View.VISIBLE
-            setStatus(getString(R.string.status_times_ready))
-
-        } catch (e: Exception) {
-            showError(getString(R.string.error_parse, e.message))
-        }
-    }
-
-    // ----------------------------------------------------------------------------------
-    // Alarm Creation
-    // ----------------------------------------------------------------------------------
-
-    private fun setSelectedAlarms() {
-        val alarmItems = mutableListOf<Triple<String, Int, Int>>()
-
-        if (binding.switchSunrise.isChecked) {
-            sunriseCalendar?.let { cal ->
-                alarmItems.add(Triple(
-                    getString(R.string.alarm_label_sunrise),
-                    cal.get(Calendar.HOUR_OF_DAY),
-                    cal.get(Calendar.MINUTE)
-                ))
-            }
-        }
-
-        if (binding.switchSolarNoon.isChecked) {
-            solarNoonCalendar?.let { cal ->
-                alarmItems.add(Triple(
-                    getString(R.string.alarm_label_solar_noon),
-                    cal.get(Calendar.HOUR_OF_DAY),
-                    cal.get(Calendar.MINUTE)
-                ))
-            }
-        }
-
-        if (binding.switchSunset.isChecked) {
-            sunsetCalendar?.let { cal ->
-                alarmItems.add(Triple(
-                    getString(R.string.alarm_label_sunset),
-                    cal.get(Calendar.HOUR_OF_DAY),
-                    cal.get(Calendar.MINUTE)
-                ))
-            }
-        }
-
-        if (alarmItems.isEmpty()) {
-            Toast.makeText(this, R.string.error_no_alarm_selected, Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val results = AlarmHelper.setAlarms(this, alarmItems)
-        val successCount = results.count { it.success }
-        val failCount = results.size - successCount
-
-        val message = when {
-            failCount == 0 -> resources.getQuantityString(
-                R.plurals.alarm_set_success, successCount, successCount
+    private fun openExactAlarmSettings() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+        runCatching {
+            startActivity(
+                Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
+                    .setData(Uri.fromParts("package", packageName, null))
             )
-            successCount == 0 -> getString(R.string.alarm_set_all_failed)
-            else -> getString(R.string.alarm_set_partial, successCount, failCount)
+        }.onFailure { openAppSettings() }
+    }
+
+    private fun openAppSettings() {
+        runCatching {
+            startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                    .setData(Uri.fromParts("package", packageName, null))
+            )
         }
-
-        Snackbar.make(binding.root, message, Snackbar.LENGTH_LONG).show()
     }
 
     // ----------------------------------------------------------------------------------
-    // UI Helpers
+    // Errors
     // ----------------------------------------------------------------------------------
 
-    private fun showLoading(show: Boolean) {
-        binding.progressBar.visibility = if (show) View.VISIBLE else View.GONE
-    }
-
-    private fun setStatus(message: String) {
-        binding.tvStatus.text = message
-    }
-
-    private fun showError(message: String) {
-        showLoading(false)
-        setStatus(message)
-    }
-
-    private fun resetResults() {
-        binding.cardResults.visibility = View.GONE
-        binding.btnSetAlarms.visibility = View.GONE
-        binding.layoutAlarmInfo.visibility = View.GONE
-        sunriseCalendar = null
-        solarNoonCalendar = null
-        sunsetCalendar = null
+    /**
+     * Errors go to a Snackbar with an action rather than into the status line,
+     * where they used to be indistinguishable from ordinary progress text.
+     */
+    private fun showError(message: String, action: ErrorAction?) {
+        val snackbar = Snackbar.make(binding.root, message, Snackbar.LENGTH_LONG)
+        when (action) {
+            ErrorAction.RETRY ->
+                snackbar.setAction(R.string.retry) { requestLocation() }
+            ErrorAction.OPEN_APP_SETTINGS ->
+                snackbar.setAction(R.string.open_settings) { openAppSettings() }
+            null -> Unit
+        }
+        snackbar.show()
     }
 }
