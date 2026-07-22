@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.View
+import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
@@ -17,6 +18,9 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import com.google.android.material.chip.Chip
+import com.google.android.material.chip.ChipGroup
+import com.google.android.material.slider.Slider
 import com.google.android.material.snackbar.Snackbar
 import com.trisandhya.sunrisealarm.data.SandhyaPrefs
 import com.trisandhya.sunrisealarm.databinding.ActivityMainBinding
@@ -90,6 +94,9 @@ class MainActivity : AppCompatActivity() {
         )
 
         binding.btnRefresh.setOnClickListener { requestLocation() }
+        binding.btnSnoozeDuration.setOnClickListener {
+            showSnoozeDialog(viewModel.state.value.snoozeMinutes)
+        }
 
         observeState()
         observeEvents()
@@ -152,6 +159,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.tvTodayDate.text = state.today.format(dateFormat)
+        binding.btnSnoozeDuration.text = getString(R.string.snooze_minutes, state.snoozeMinutes)
 
         state.rows.forEach { row -> renderRow(row, state.hasLocation) }
 
@@ -219,15 +227,54 @@ class MainActivity : AppCompatActivity() {
     // Offsets
     // ----------------------------------------------------------------------------------
 
+    /**
+     * Slider from exact time (0) to one hour before (60), with preset chips as
+     * shortcuts. The slider is the single source of truth; chips just move it.
+     */
     private fun showOffsetDialog(junction: Junction, current: Int) {
-        val choices = SandhyaPrefs.OFFSET_CHOICES
-        val labels = choices.map { offsetLabel(it) }.toTypedArray()
+        val view = layoutInflater.inflate(R.layout.dialog_offset, null)
+        val slider = view.findViewById<Slider>(R.id.slider_offset)
+        val valueLabel = view.findViewById<TextView>(R.id.tv_offset_value)
+        val presets = view.findViewById<ChipGroup>(R.id.chip_presets)
+
+        slider.value = current.coerceIn(0, SandhyaPrefs.MAX_OFFSET_MINUTES).toFloat()
+        valueLabel.text = offsetLabel(slider.value.toInt())
+        slider.addOnChangeListener { _, value, _ ->
+            valueLabel.text = offsetLabel(value.toInt())
+        }
+
+        SandhyaPrefs.OFFSET_CHOICES.forEach { preset ->
+            val chip = Chip(presets.context).apply {
+                text = if (preset == 0) {
+                    getString(R.string.offset_chip_exact)
+                } else {
+                    getString(R.string.offset_chip_minutes, preset)
+                }
+                isCheckable = false
+                setOnClickListener { slider.value = preset.toFloat() }
+            }
+            presets.addView(chip)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle(R.string.offset_dialog_title)
+            .setView(view)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                viewModel.setOffsetMinutes(junction, slider.value.toInt())
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showSnoozeDialog(current: Int) {
+        val choices = SandhyaPrefs.SNOOZE_CHOICES
+        val labels = choices.map { getString(R.string.snooze_minutes, it) }.toTypedArray()
         val checked = choices.indexOf(current).takeIf { it >= 0 } ?: 0
 
         AlertDialog.Builder(this)
-            .setTitle(getString(R.string.offset_dialog_title))
+            .setTitle(R.string.snooze_dialog_title)
             .setSingleChoiceItems(labels, checked) { dialog, which ->
-                viewModel.setOffsetMinutes(junction, choices[which])
+                viewModel.setSnoozeMinutes(choices[which])
                 dialog.dismiss()
             }
             .setNegativeButton(R.string.cancel, null)

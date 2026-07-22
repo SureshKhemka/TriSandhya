@@ -26,6 +26,11 @@ object AlarmNotifier {
 
     private const val CHANNEL_ID = "sandhya_alarms"
 
+    // Added to a junction's request code so each action button gets a distinct
+    // PendingIntent, separate from the alarm PendingIntents in SandhyaScheduler.
+    private const val SNOOZE_ACTION_OFFSET = 2000
+    private const val DISMISS_ACTION_OFFSET = 3000
+
     fun ensureChannel(context: Context) {
         val manager = context.getSystemService<NotificationManager>() ?: return
         if (manager.getNotificationChannel(CHANNEL_ID) != null) return
@@ -100,9 +105,38 @@ object AlarmNotifier {
             // Wakes the screen when locked; degrades to a heads-up banner otherwise.
             .setFullScreenIntent(fullScreenPending, true)
             .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM))
+            .addAction(
+                0,
+                context.getString(R.string.snooze),
+                actionIntent(context, junction, SandhyaScheduler.ACTION_SNOOZE, SNOOZE_ACTION_OFFSET)
+            )
+            .addAction(
+                0,
+                context.getString(R.string.dismiss),
+                actionIntent(context, junction, SandhyaScheduler.ACTION_DISMISS, DISMISS_ACTION_OFFSET)
+            )
             .build()
 
         NotificationManagerCompat.from(context).notify(junction.requestCode, notification)
+    }
+
+    /** Broadcast PendingIntent for a notification action button, keyed off the junction. */
+    private fun actionIntent(
+        context: Context,
+        junction: Junction,
+        action: String,
+        codeOffset: Int
+    ): PendingIntent {
+        val intent = Intent(context, AlarmReceiver::class.java).apply {
+            this.action = action
+            putExtra(SandhyaScheduler.EXTRA_JUNCTION, junction.key)
+        }
+        return PendingIntent.getBroadcast(
+            context,
+            junction.requestCode + codeOffset,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
     }
 
     fun cancel(context: Context, junction: Junction) {
