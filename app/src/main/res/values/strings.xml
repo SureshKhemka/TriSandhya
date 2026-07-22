@@ -24,6 +24,16 @@
     <string name="offset_at_time">At the exact time</string>
     <string name="offset_minutes_before">%1$d min before</string>
     <string name="offset_dialog_title">Remind me…</string>
+    <string name="offset_slider_hint">Slide to pick any time from exact to 1 hour before.</string>
+    <string name="offset_chip_exact">Exact</string>
+    <string name="offset_chip_minutes">%1$d</string>
+
+    <!-- Snooze -->
+    <string name="snooze">Snooze</string>
+    <string name="snooze_duration_label">Snooze duration</string>
+    <string name="snooze_dialog_title">Snooze for…</string>
+    <string name="snooze_minutes">%1$d min</string>
+    <string name="snoozed_toast">Snoozed — rings in %1$d min</string>
 
     <!-- Status messages -->
     <string name="detecting">Detecting location…</string>

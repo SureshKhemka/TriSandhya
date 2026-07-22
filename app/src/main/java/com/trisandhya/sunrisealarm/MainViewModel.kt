@@ -41,7 +41,8 @@ data class UiState(
     val rows: List<JunctionRow> = emptyList(),
     val nextAlarm: Pair<Junction, ZonedDateTime>? = null,
     val statusText: String? = null,
-    val needsExactAlarmPermission: Boolean = false
+    val needsExactAlarmPermission: Boolean = false,
+    val snoozeMinutes: Int = SandhyaPrefs.DEFAULT_SNOOZE_MINUTES
 )
 
 /** Actions a Snackbar can offer when something goes wrong. */
@@ -207,6 +208,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun setSnoozeMinutes(minutes: Int) {
+        prefs.setSnoozeMinutes(minutes)
+        recompute()
+    }
+
     fun rescheduleAll() {
         scheduler.syncAll()
         if (prefs.anyEnabled()) DailyRescheduleWorker.enqueue(getApplication())
@@ -237,7 +243,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 rows = Junction.entries.map {
                     JunctionRow(it, null, prefs.isEnabled(it), prefs.offsetMinutes(it), null)
                 },
-                nextAlarm = null
+                nextAlarm = null,
+                snoozeMinutes = prefs.snoozeMinutes()
             )
             return
         }
@@ -265,7 +272,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             locationName = prefs.locationName,
             today = today,
             rows = rows,
-            nextAlarm = scheduler.nextEnabledAlarm()
+            nextAlarm = scheduler.nextEnabledAlarm(),
+            snoozeMinutes = prefs.snoozeMinutes()
         )
     }
 

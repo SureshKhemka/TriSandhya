@@ -88,10 +88,30 @@ class SandhyaScheduler(private val context: Context) {
      */
     @SuppressLint("MissingPermission")
     fun schedule(junction: Junction): ZonedDateTime? {
-        val manager = alarmManager ?: return null
         val fireAt = nextOccurrence(junction) ?: return null
+        return armAt(junction, fireAt, isSnooze = false)
+    }
+
+    /**
+     * Pushes a just-fired alarm back by the configured snooze duration.
+     *
+     * The snooze fires through a *separate* PendingIntent from the daily alarm, so it
+     * never overwrites tomorrow's already-scheduled occurrence. Chained snoozes work
+     * because FLAG_UPDATE_CURRENT replaces the previous snooze in place.
+     *
+     * @return the instant the snooze will fire, or null if it could not be scheduled.
+     */
+    @SuppressLint("MissingPermission")
+    fun snooze(junction: Junction, now: ZonedDateTime = ZonedDateTime.now()): ZonedDateTime? {
+        val fireAt = now.plusMinutes(prefs.snoozeMinutes().toLong())
+        return armAt(junction, fireAt, isSnooze = true)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun armAt(junction: Junction, fireAt: ZonedDateTime, isSnooze: Boolean): ZonedDateTime? {
+        val manager = alarmManager ?: return null
         val triggerAt = fireAt.toInstant().toEpochMilli()
-        val operation = pendingIntent(junction, mutable = false)
+        val operation = alarmPendingIntent(junction, isSnooze)
 
         if (canScheduleExact()) {
             // A devotional alarm is time-critical; setExactAndAllowWhileIdle is the
@@ -106,7 +126,12 @@ class SandhyaScheduler(private val context: Context) {
     }
 
     fun cancel(junction: Junction) {
-        alarmManager?.cancel(pendingIntent(junction, mutable = false))
+        alarmManager?.cancel(alarmPendingIntent(junction, isSnooze = false))
+        cancelSnooze(junction)
+    }
+
+    fun cancelSnooze(junction: Junction) {
+        alarmManager?.cancel(alarmPendingIntent(junction, isSnooze = true))
     }
 
     fun cancelAll() = Junction.entries.forEach { cancel(it) }
@@ -119,19 +144,28 @@ class SandhyaScheduler(private val context: Context) {
             true
         }
 
-    private fun pendingIntent(junction: Junction, mutable: Boolean): PendingIntent {
+    private fun alarmPendingIntent(junction: Junction, isSnooze: Boolean): PendingIntent {
         val intent = Intent(context, AlarmReceiver::class.java).apply {
             action = ACTION_SANDHYA_ALARM
             putExtra(EXTRA_JUNCTION, junction.key)
+            putExtra(EXTRA_IS_SNOOZE, isSnooze)
         }
-        val flags = PendingIntent.FLAG_UPDATE_CURRENT or
-                if (mutable) PendingIntent.FLAG_MUTABLE else PendingIntent.FLAG_IMMUTABLE
-        return PendingIntent.getBroadcast(context, junction.requestCode, intent, flags)
+        // Distinct request code so the snooze one-shot and the daily alarm are two
+        // separate PendingIntents that never clobber each other.
+        val requestCode = if (isSnooze) junction.requestCode + SNOOZE_CODE_OFFSET else junction.requestCode
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        return PendingIntent.getBroadcast(context, requestCode, intent, flags)
     }
 
     companion object {
         const val ACTION_SANDHYA_ALARM = "com.trisandhya.sunrisealarm.ACTION_SANDHYA_ALARM"
+        const val ACTION_SNOOZE = "com.trisandhya.sunrisealarm.ACTION_SNOOZE"
+        const val ACTION_DISMISS = "com.trisandhya.sunrisealarm.ACTION_DISMISS"
         const val EXTRA_JUNCTION = "junction"
+        const val EXTRA_IS_SNOOZE = "is_snooze"
+
+        /** Added to a junction's request code to key its snooze PendingIntent apart. */
+        const val SNOOZE_CODE_OFFSET = 1000
 
         /** Long enough to cross a polar winter and still find the next sunrise. */
         private const val SEARCH_HORIZON_DAYS = 400

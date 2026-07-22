@@ -22,12 +22,18 @@ class SandhyaPrefs(context: Context) {
     fun setEnabled(junction: Junction, enabled: Boolean) =
         prefs.edit { putBoolean("enabled_${junction.key}", enabled) }
 
-    /** Minutes before the junction that the alarm should fire. */
+    /** Minutes before the junction that the alarm should fire (0..[MAX_OFFSET_MINUTES]). */
     fun offsetMinutes(junction: Junction): Int =
         prefs.getInt("offset_${junction.key}", DEFAULT_OFFSET_MINUTES)
 
     fun setOffsetMinutes(junction: Junction, minutes: Int) =
-        prefs.edit { putInt("offset_${junction.key}", minutes) }
+        prefs.edit { putInt("offset_${junction.key}", minutes.coerceIn(0, MAX_OFFSET_MINUTES)) }
+
+    /** Minutes a fired alarm is pushed back when the user snoozes it. Global, not per-junction. */
+    fun snoozeMinutes(): Int = prefs.getInt(KEY_SNOOZE, DEFAULT_SNOOZE_MINUTES)
+
+    fun setSnoozeMinutes(minutes: Int) =
+        prefs.edit { putInt(KEY_SNOOZE, minutes) }
 
     fun anyEnabled(): Boolean = Junction.entries.any { isEnabled(it) }
 
@@ -56,11 +62,20 @@ class SandhyaPrefs(context: Context) {
     companion object {
         const val DEFAULT_OFFSET_MINUTES = 10
 
-        /** Offsets offered in the picker, in minutes before the junction. */
-        val OFFSET_CHOICES = listOf(0, 5, 10, 15, 20, 30, 45, 60)
+        /** The slider tops out at one hour before, per the feature request. */
+        const val MAX_OFFSET_MINUTES = 60
+
+        /** Quick-pick presets in the offset picker; the slider still allows any value. */
+        val OFFSET_CHOICES = listOf(0, 5, 10, 15, 30, 45, 60)
+
+        const val DEFAULT_SNOOZE_MINUTES = 10
+
+        /** Snooze durations offered in the picker, in minutes. */
+        val SNOOZE_CHOICES = listOf(5, 10, 15, 20, 30)
 
         private const val KEY_LAT = "latitude"
         private const val KEY_LNG = "longitude"
         private const val KEY_LOCATION_NAME = "location_name"
+        private const val KEY_SNOOZE = "snooze_minutes"
     }
 }

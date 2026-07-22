@@ -36,14 +36,28 @@
         android:textSize="15sp" />
 
     <com.google.android.material.button.MaterialButton
-        android:id="@+id/btn_dismiss"
+        android:id="@+id/btn_snooze"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="48dp"
+        android:paddingStart="56dp"
+        android:paddingEnd="56dp"
+        android:text="@string/snooze"
+        android:textSize="17sp"
+        android:textStyle="bold"
+        app:backgroundTint="@color/accent"
+        app:cornerRadius="28dp" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btn_dismiss"
+        style="@style/Widget.MaterialComponents.Button.TextButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
         android:paddingStart="48dp"
         android:paddingEnd="48dp"
         android:text="@string/dismiss"
-        android:textSize="17sp"
-        app:cornerRadius="28dp" />
+        android:textColor="@color/text_secondary"
+        android:textSize="16sp" />
 
 </LinearLayout>

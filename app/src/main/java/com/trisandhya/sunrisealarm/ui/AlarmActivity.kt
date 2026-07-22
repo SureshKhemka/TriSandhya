@@ -3,10 +3,13 @@ package com.trisandhya.sunrisealarm.ui
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.trisandhya.sunrisealarm.R
 import com.trisandhya.sunrisealarm.alarm.AlarmNotifier
+import com.trisandhya.sunrisealarm.alarm.SandhyaScheduler
+import com.trisandhya.sunrisealarm.data.SandhyaPrefs
 import com.trisandhya.sunrisealarm.databinding.ActivityAlarmBinding
 import com.trisandhya.sunrisealarm.model.Junction
 
@@ -36,8 +39,26 @@ class AlarmActivity : AppCompatActivity() {
         }
         binding.tvTime.text = timeText
 
+        binding.btnSnooze.setOnClickListener {
+            junction?.let { j ->
+                AlarmNotifier.cancel(this, j)
+                val fireAt = SandhyaScheduler(this).snooze(j)
+                if (fireAt != null) {
+                    Toast.makeText(
+                        this,
+                        getString(R.string.snoozed_toast, SandhyaPrefs(this).snoozeMinutes()),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+            finish()
+        }
+
         binding.btnDismiss.setOnClickListener {
-            junction?.let { AlarmNotifier.cancel(this, it) }
+            junction?.let {
+                AlarmNotifier.cancel(this, it)
+                SandhyaScheduler(this).cancelSnooze(it)
+            }
             finish()
         }
     }
