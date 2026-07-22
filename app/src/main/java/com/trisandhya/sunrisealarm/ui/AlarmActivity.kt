@@ -4,8 +4,11 @@ import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import android.widget.Toast
+import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.trisandhya.sunrisealarm.R
 import com.trisandhya.sunrisealarm.alarm.AlarmNotifier
 import com.trisandhya.sunrisealarm.alarm.SandhyaScheduler
@@ -24,11 +27,26 @@ class AlarmActivity : AppCompatActivity() {
     private lateinit var binding: ActivityAlarmBinding
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         showOverLockScreen()
 
         binding = ActivityAlarmBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // Add the system-bar insets on top of the layout's existing uniform padding so
+        // the centred content never hides under the status or navigation bar.
+        val basePadding = binding.root.paddingTop
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(
+                basePadding + bars.left,
+                basePadding + bars.top,
+                basePadding + bars.right,
+                basePadding + bars.bottom
+            )
+            insets
+        }
 
         val junction = Junction.fromKey(intent.getStringExtra(EXTRA_JUNCTION))
         val timeText = intent.getStringExtra(EXTRA_TIME).orEmpty()

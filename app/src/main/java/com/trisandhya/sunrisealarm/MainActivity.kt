@@ -9,12 +9,15 @@ import android.os.Bundle
 import android.provider.Settings
 import android.view.View
 import android.widget.TextView
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -83,9 +86,20 @@ class MainActivity : AppCompatActivity() {
     // ----------------------------------------------------------------------------------
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Apps targeting Android 15+ (API 35) draw edge-to-edge by default, so the
+        // system-bar colors in the theme are ignored and content would otherwise sit
+        // under the status and navigation bars. Opt in explicitly (uniform on all API
+        // levels) and pad the scroll container by the bar insets.
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            insets
+        }
 
         rowBindings = mapOf(
             Junction.SUNRISE to binding.rowSunrise,
