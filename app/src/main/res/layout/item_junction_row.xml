@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?><!--
   One junction row: icon, name, today's time, an enable switch, and the
-  "remind me N minutes before" offset control.
+  per-junction "remind me before" offset and "snooze for" controls.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -68,7 +68,7 @@
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingStart="52dp"
+        android:paddingStart="46dp"
         android:paddingEnd="0dp">
 
         <com.google.android.material.button.MaterialButton
@@ -79,12 +79,29 @@
             android:insetTop="0dp"
             android:insetBottom="0dp"
             android:minHeight="36dp"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
+            android:minWidth="0dp"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp"
             android:textAllCaps="false"
             android:textColor="@color/accent"
             android:textSize="12sp"
             tools:text="10 min before" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_snooze"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:minHeight="36dp"
+            android:minWidth="0dp"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp"
+            android:textAllCaps="false"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            tools:text="Snooze: 10 min" />
 
         <TextView
             android:id="@+id/tv_next"
@@ -92,9 +109,10 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:gravity="end"
+            android:paddingStart="4dp"
             android:textColor="@color/text_secondary"
-            android:textSize="12sp"
-            tools:text="in 4 hours" />
+            android:textSize="11sp"
+            tools:text="Thu 5:02 AM" />
 
     </LinearLayout>
 

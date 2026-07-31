@@ -30,6 +30,7 @@ data class JunctionRow(
     val time: ZonedDateTime?,
     val enabled: Boolean,
     val offsetMinutes: Int,
+    val snoozeMinutes: Int,
     val nextFireAt: ZonedDateTime?
 )
 
@@ -42,7 +43,8 @@ data class UiState(
     val nextAlarm: Pair<Junction, ZonedDateTime>? = null,
     val statusText: String? = null,
     val needsExactAlarmPermission: Boolean = false,
-    val snoozeMinutes: Int = SandhyaPrefs.DEFAULT_SNOOZE_MINUTES
+    val backgroundKey: String = SandhyaPrefs.DEFAULT_BACKGROUND_KEY,
+    val backgroundUri: String? = null
 )
 
 /** Actions a Snackbar can offer when something goes wrong. */
@@ -208,8 +210,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun setSnoozeMinutes(minutes: Int) {
-        prefs.setSnoozeMinutes(minutes)
+    fun setSnoozeMinutes(junction: Junction, minutes: Int) {
+        prefs.setSnoozeMinutes(junction, minutes)
+        recompute()
+    }
+
+    /** Selects a built-in background (uri null) or the user's own photo (key "custom"). */
+    fun setBackground(key: String, uri: String? = null) {
+        prefs.backgroundKey = key
+        prefs.backgroundUri = uri
         recompute()
     }
 
@@ -241,10 +250,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 hasLocation = false,
                 today = today,
                 rows = Junction.entries.map {
-                    JunctionRow(it, null, prefs.isEnabled(it), prefs.offsetMinutes(it), null)
+                    JunctionRow(
+                        it, null, prefs.isEnabled(it),
+                        prefs.offsetMinutes(it), prefs.snoozeMinutes(it), null
+                    )
                 },
                 nextAlarm = null,
-                snoozeMinutes = prefs.snoozeMinutes()
+                backgroundKey = prefs.backgroundKey,
+                backgroundUri = prefs.backgroundUri
             )
             return
         }
@@ -263,6 +276,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 time = time,
                 enabled = prefs.isEnabled(junction),
                 offsetMinutes = prefs.offsetMinutes(junction),
+                snoozeMinutes = prefs.snoozeMinutes(junction),
                 nextFireAt = scheduler.nextOccurrence(junction)
             )
         }
@@ -273,7 +287,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             today = today,
             rows = rows,
             nextAlarm = scheduler.nextEnabledAlarm(),
-            snoozeMinutes = prefs.snoozeMinutes()
+            backgroundKey = prefs.backgroundKey,
+            backgroundUri = prefs.backgroundUri
         )
     }
 

@@ -1,18 +1,16 @@
 package com.trisandhya.sunrisealarm.ui
 
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
-import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import com.trisandhya.sunrisealarm.R
-import com.trisandhya.sunrisealarm.alarm.AlarmNotifier
+import com.trisandhya.sunrisealarm.alarm.AlarmReceiver
 import com.trisandhya.sunrisealarm.alarm.SandhyaScheduler
-import com.trisandhya.sunrisealarm.data.SandhyaPrefs
 import com.trisandhya.sunrisealarm.databinding.ActivityAlarmBinding
 import com.trisandhya.sunrisealarm.model.Junction
 
@@ -57,28 +55,27 @@ class AlarmActivity : AppCompatActivity() {
         }
         binding.tvTime.text = timeText
 
+        // Route both buttons through AlarmReceiver so snooze/dismiss have a single code
+        // path shared with the notification actions (scheduling, the snoozed status
+        // notification, and the toast all live there).
         binding.btnSnooze.setOnClickListener {
-            junction?.let { j ->
-                AlarmNotifier.cancel(this, j)
-                val fireAt = SandhyaScheduler(this).snooze(j)
-                if (fireAt != null) {
-                    Toast.makeText(
-                        this,
-                        getString(R.string.snoozed_toast, SandhyaPrefs(this).snoozeMinutes()),
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
-            }
+            junction?.let { sendAction(SandhyaScheduler.ACTION_SNOOZE, it) }
             finish()
         }
 
         binding.btnDismiss.setOnClickListener {
-            junction?.let {
-                AlarmNotifier.cancel(this, it)
-                SandhyaScheduler(this).cancelSnooze(it)
-            }
+            junction?.let { sendAction(SandhyaScheduler.ACTION_DISMISS, it) }
             finish()
         }
+    }
+
+    private fun sendAction(action: String, junction: Junction) {
+        sendBroadcast(
+            Intent(this, AlarmReceiver::class.java).apply {
+                this.action = action
+                putExtra(SandhyaScheduler.EXTRA_JUNCTION, junction.key)
+            }
+        )
     }
 
     private fun showOverLockScreen() {

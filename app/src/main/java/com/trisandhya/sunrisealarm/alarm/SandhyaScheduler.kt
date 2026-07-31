@@ -103,7 +103,7 @@ class SandhyaScheduler(private val context: Context) {
      */
     @SuppressLint("MissingPermission")
     fun snooze(junction: Junction, now: ZonedDateTime = ZonedDateTime.now()): ZonedDateTime? {
-        val fireAt = now.plusMinutes(prefs.snoozeMinutes().toLong())
+        val fireAt = now.plusMinutes(prefs.snoozeMinutes(junction).toLong())
         return armAt(junction, fireAt, isSnooze = true)
     }
 
@@ -161,6 +161,7 @@ class SandhyaScheduler(private val context: Context) {
         const val ACTION_SANDHYA_ALARM = "com.trisandhya.sunrisealarm.ACTION_SANDHYA_ALARM"
         const val ACTION_SNOOZE = "com.trisandhya.sunrisealarm.ACTION_SNOOZE"
         const val ACTION_DISMISS = "com.trisandhya.sunrisealarm.ACTION_DISMISS"
+        const val ACTION_CANCEL_SNOOZE = "com.trisandhya.sunrisealarm.ACTION_CANCEL_SNOOZE"
         const val EXTRA_JUNCTION = "junction"
         const val EXTRA_IS_SNOOZE = "is_snooze"
 

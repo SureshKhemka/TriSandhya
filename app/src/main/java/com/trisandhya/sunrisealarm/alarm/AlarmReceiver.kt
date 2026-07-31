@@ -29,8 +29,17 @@ class AlarmReceiver : BroadcastReceiver() {
         when (intent.action) {
             SandhyaScheduler.ACTION_SNOOZE -> snooze(context, junction, scheduler)
 
+            SandhyaScheduler.ACTION_CANCEL_SNOOZE -> {
+                scheduler.cancelSnooze(junction)
+                AlarmNotifier.cancelSnoozed(context, junction)
+                Toast.makeText(
+                    context, context.getString(R.string.snooze_cancelled_toast), Toast.LENGTH_SHORT
+                ).show()
+            }
+
             SandhyaScheduler.ACTION_DISMISS -> {
                 AlarmNotifier.cancel(context, junction)
+                AlarmNotifier.cancelSnoozed(context, junction)
                 scheduler.cancelSnooze(junction)
             }
 
@@ -45,6 +54,9 @@ class AlarmReceiver : BroadcastReceiver() {
         scheduler: SandhyaScheduler
     ) {
         val prefs = SandhyaPrefs(context)
+
+        // This firing supersedes any snooze that led here, so clear its status chip.
+        AlarmNotifier.cancelSnoozed(context, junction)
 
         // The user may have switched this junction off while the alarm was pending.
         if (!prefs.isEnabled(junction)) {
@@ -64,9 +76,12 @@ class AlarmReceiver : BroadcastReceiver() {
         AlarmNotifier.cancel(context, junction)
         val fireAt = scheduler.snooze(junction)
         if (fireAt != null) {
+            // Post the ongoing "snoozed — rings at HH:MM" status so the pending re-ring
+            // has a visible Cancel handle for its whole life.
+            AlarmNotifier.showSnoozed(context, junction, fireAt)
             Toast.makeText(
                 context,
-                context.getString(R.string.snoozed_toast, SandhyaPrefs(context).snoozeMinutes()),
+                context.getString(R.string.snoozed_toast, SandhyaPrefs(context).snoozeMinutes(junction)),
                 Toast.LENGTH_SHORT
             ).show()
         }

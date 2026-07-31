@@ -30,10 +30,29 @@
 
     <!-- Snooze -->
     <string name="snooze">Snooze</string>
-    <string name="snooze_duration_label">Snooze duration</string>
     <string name="snooze_dialog_title">Snooze for…</string>
     <string name="snooze_minutes">%1$d min</string>
+    <string name="snooze_button">Snooze: %1$d min</string>
     <string name="snoozed_toast">Snoozed — rings in %1$d min</string>
+    <string name="cancel_snooze">Cancel</string>
+    <string name="snooze_cancelled_toast">Snooze cancelled</string>
+
+    <!-- Snoozed-status notification -->
+    <string name="channel_snoozed">Snoozed reminders</string>
+    <string name="channel_snoozed_description">Shows when an alarm is snoozed, with an option to cancel it</string>
+    <string name="snoozed_title">%1$s snoozed</string>
+    <string name="snoozed_body">Rings at %1$s</string>
+
+    <!-- Background -->
+    <string name="background_label">Background</string>
+    <string name="background_dialog_title">Choose a background</string>
+    <string name="background_choose_photo">My photo</string>
+    <string name="background_photo_error">Couldn\'t use that image.</string>
+    <string name="bg_default">Default</string>
+    <string name="bg_dawn">Dawn</string>
+    <string name="bg_dusk">Dusk</string>
+    <string name="bg_night">Night</string>
+    <string name="bg_temple">Temple gold</string>
 
     <!-- Status messages -->
     <string name="detecting">Detecting location…</string>
