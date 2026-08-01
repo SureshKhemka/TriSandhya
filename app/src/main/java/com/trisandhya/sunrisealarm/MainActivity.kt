@@ -3,13 +3,18 @@ package com.trisandhya.sunrisealarm
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.View
+import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
@@ -28,9 +33,11 @@ import com.google.android.material.snackbar.Snackbar
 import com.trisandhya.sunrisealarm.data.SandhyaPrefs
 import com.trisandhya.sunrisealarm.databinding.ActivityMainBinding
 import com.trisandhya.sunrisealarm.databinding.ItemJunctionRowBinding
+import com.trisandhya.sunrisealarm.model.AppBackground
 import com.trisandhya.sunrisealarm.model.Junction
 import com.trisandhya.sunrisealarm.util.RelativeTime
 import kotlinx.coroutines.launch
+import java.io.File
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -81,6 +88,20 @@ class MainActivity : AppCompatActivity() {
         if (!granted) updateBanner()
     }
 
+    // The system photo picker needs no permission. The chosen image is copied into
+    // app storage so the background survives reboots (picker URIs are not durable).
+    private val photoPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri == null) return@registerForActivityResult
+        val path = copyPickedImage(uri)
+        if (path != null) {
+            viewModel.setBackground(SandhyaPrefs.CUSTOM_BACKGROUND_KEY, path)
+        } else {
+            Snackbar.make(binding.root, R.string.background_photo_error, Snackbar.LENGTH_SHORT).show()
+        }
+    }
+
     // ----------------------------------------------------------------------------------
     // Lifecycle
     // ----------------------------------------------------------------------------------
@@ -95,7 +116,9 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, insets ->
+        // Pad the scrolling content (not the root) so a chosen background image still
+        // fills edge-to-edge behind the status and navigation bars.
+        ViewCompat.setOnApplyWindowInsetsListener(binding.contentScroll) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
             insets
@@ -108,9 +131,7 @@ class MainActivity : AppCompatActivity() {
         )
 
         binding.btnRefresh.setOnClickListener { requestLocation() }
-        binding.btnSnoozeDuration.setOnClickListener {
-            showSnoozeDialog(viewModel.state.value.snoozeMinutes)
-        }
+        binding.btnBackground.setOnClickListener { showBackgroundDialog() }
 
         observeState()
         observeEvents()
@@ -173,12 +194,12 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.tvTodayDate.text = state.today.format(dateFormat)
-        binding.btnSnoozeDuration.text = getString(R.string.snooze_minutes, state.snoozeMinutes)
 
         state.rows.forEach { row -> renderRow(row, state.hasLocation) }
 
         renderNextAlarm(state)
         renderBanner(state)
+        applyBackground(state)
     }
 
     private fun renderRow(row: JunctionRow, hasLocation: Boolean) {
@@ -206,8 +227,15 @@ class MainActivity : AppCompatActivity() {
         }
         rowBinding.switchEnabled.contentDescription = getString(row.junction.labelRes)
 
-        rowBinding.btnOffset.text = offsetLabel(row.offsetMinutes)
+        rowBinding.btnOffset.text = if (row.offsetMinutes == 0) {
+            getString(R.string.remind_chip_exact)
+        } else {
+            getString(R.string.remind_chip_before, row.offsetMinutes)
+        }
         rowBinding.btnOffset.setOnClickListener { showOffsetDialog(row.junction, row.offsetMinutes) }
+
+        rowBinding.btnSnooze.text = getString(R.string.snooze_button, row.snoozeMinutes)
+        rowBinding.btnSnooze.setOnClickListener { showSnoozeDialog(row.junction, row.snoozeMinutes) }
 
         rowBinding.tvNext.text = if (row.enabled && row.nextFireAt != null) {
             row.nextFireAt.format(nextFormat)
@@ -280,19 +308,177 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun showSnoozeDialog(current: Int) {
+    private fun showSnoozeDialog(junction: Junction, current: Int) {
         val choices = SandhyaPrefs.SNOOZE_CHOICES
         val labels = choices.map { getString(R.string.snooze_minutes, it) }.toTypedArray()
         val checked = choices.indexOf(current).takeIf { it >= 0 } ?: 0
 
         AlertDialog.Builder(this)
-            .setTitle(R.string.snooze_dialog_title)
+            .setTitle(getString(R.string.snooze_dialog_title))
             .setSingleChoiceItems(labels, checked) { dialog, which ->
-                viewModel.setSnoozeMinutes(choices[which])
+                viewModel.setSnoozeMinutes(junction, choices[which])
                 dialog.dismiss()
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
+    }
+
+    // ----------------------------------------------------------------------------------
+    // Background
+    // ----------------------------------------------------------------------------------
+
+    /** Draws the chosen background behind the content, or nothing for the default. */
+    private fun applyBackground(state: UiState) {
+        binding.btnBackground.text = backgroundLabel(state)
+
+        val image = binding.bgImage
+        val scrim = binding.bgScrim
+
+        val bitmap = if (state.backgroundKey == SandhyaPrefs.CUSTOM_BACKGROUND_KEY) {
+            state.backgroundUri?.let { decodeSampled(it, image.width, image.height) }
+        } else {
+            null
+        }
+
+        when {
+            bitmap != null -> {
+                image.setImageBitmap(bitmap)
+                showBackground(image, scrim, visible = true)
+            }
+            state.backgroundKey != SandhyaPrefs.CUSTOM_BACKGROUND_KEY &&
+                AppBackground.fromKey(state.backgroundKey).drawableRes != null -> {
+                image.setImageResource(AppBackground.fromKey(state.backgroundKey).drawableRes!!)
+                showBackground(image, scrim, visible = true)
+            }
+            else -> {
+                image.setImageDrawable(null)
+                showBackground(image, scrim, visible = false)
+            }
+        }
+    }
+
+    private fun showBackground(image: ImageView, scrim: View, visible: Boolean) {
+        val v = if (visible) View.VISIBLE else View.GONE
+        image.visibility = v
+        scrim.visibility = v
+    }
+
+    private fun backgroundLabel(state: UiState): String =
+        if (state.backgroundKey == SandhyaPrefs.CUSTOM_BACKGROUND_KEY) {
+            getString(R.string.background_choose_photo)
+        } else {
+            getString(AppBackground.fromKey(state.backgroundKey).labelRes)
+        }
+
+    private fun showBackgroundDialog() {
+        val view = layoutInflater.inflate(R.layout.dialog_background, null)
+        val tiles = view.findViewById<LinearLayout>(R.id.bg_tiles)
+        val state = viewModel.state.value
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.background_dialog_title)
+            .setView(view)
+            .setNegativeButton(R.string.cancel, null)
+            .create()
+
+        AppBackground.entries.forEach { bg ->
+            val selected = state.backgroundKey == bg.key
+            addTile(
+                tiles = tiles,
+                previewRes = bg.drawableRes ?: R.drawable.bg_default_swatch,
+                label = getString(bg.labelRes),
+                selected = selected,
+                hintPhoto = false
+            ) {
+                viewModel.setBackground(bg.key)
+                dialog.dismiss()
+            }
+        }
+
+        val customSelected = state.backgroundKey == SandhyaPrefs.CUSTOM_BACKGROUND_KEY
+        addTile(
+            tiles = tiles,
+            previewRes = if (customSelected) null else R.drawable.bg_default_swatch,
+            previewBitmap = if (customSelected) {
+                state.backgroundUri?.let { decodeSampled(it, 240, 360) }
+            } else null,
+            label = getString(R.string.background_choose_photo),
+            selected = customSelected,
+            hintPhoto = !customSelected
+        ) {
+            photoPickerLauncher.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+            )
+            dialog.dismiss()
+        }
+
+        dialog.show()
+    }
+
+    private fun addTile(
+        tiles: LinearLayout,
+        previewRes: Int? = null,
+        previewBitmap: Bitmap? = null,
+        label: String,
+        selected: Boolean,
+        hintPhoto: Boolean,
+        onClick: () -> Unit
+    ) {
+        val tile = layoutInflater.inflate(R.layout.item_bg_tile, tiles, false)
+        val image = tile.findViewById<ImageView>(R.id.tile_image)
+        val check = tile.findViewById<ImageView>(R.id.tile_check)
+
+        when {
+            previewBitmap != null -> image.setImageBitmap(previewBitmap)
+            previewRes != null -> image.setImageResource(previewRes)
+        }
+        tile.findViewById<TextView>(R.id.tile_label).text = label
+
+        // The check slot doubles as a "pick a photo" hint on the unselected photo tile.
+        when {
+            selected -> {
+                check.setImageResource(R.drawable.ic_check)
+                check.visibility = View.VISIBLE
+            }
+            hintPhoto -> {
+                check.setImageResource(R.drawable.ic_photo)
+                check.visibility = View.VISIBLE
+            }
+            else -> check.visibility = View.GONE
+        }
+
+        tile.setOnClickListener { onClick() }
+        tiles.addView(tile)
+    }
+
+    /** Copies a picked image into app storage; returns its path, or null on failure. */
+    private fun copyPickedImage(uri: Uri): String? = try {
+        val file = File(filesDir, "background_custom.jpg")
+        contentResolver.openInputStream(uri)?.use { input ->
+            file.outputStream().use { output -> input.copyTo(output) }
+        }
+        if (file.length() > 0) file.absolutePath else null
+    } catch (e: Exception) {
+        null
+    }
+
+    /**
+     * Decodes a saved image downsampled to roughly the target size, so a large photo
+     * cannot blow up memory when used as a full-screen background.
+     */
+    private fun decodeSampled(path: String, reqWidth: Int, reqHeight: Int): Bitmap? {
+        val targetW = if (reqWidth > 0) reqWidth else resources.displayMetrics.widthPixels
+        val targetH = if (reqHeight > 0) reqHeight else resources.displayMetrics.heightPixels
+
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, bounds)
+        if (bounds.outWidth <= 0) return null
+
+        var sample = 1
+        while (bounds.outWidth / sample > targetW * 2 || bounds.outHeight / sample > targetH * 2) {
+            sample *= 2
+        }
+        return BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })
     }
 
     // ----------------------------------------------------------------------------------

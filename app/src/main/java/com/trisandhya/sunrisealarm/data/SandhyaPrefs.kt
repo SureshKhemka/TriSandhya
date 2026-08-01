@@ -29,13 +29,28 @@ class SandhyaPrefs(context: Context) {
     fun setOffsetMinutes(junction: Junction, minutes: Int) =
         prefs.edit { putInt("offset_${junction.key}", minutes.coerceIn(0, MAX_OFFSET_MINUTES)) }
 
-    /** Minutes a fired alarm is pushed back when the user snoozes it. Global, not per-junction. */
-    fun snoozeMinutes(): Int = prefs.getInt(KEY_SNOOZE, DEFAULT_SNOOZE_MINUTES)
+    /** Minutes a fired alarm is pushed back when the user snoozes it, per junction. */
+    fun snoozeMinutes(junction: Junction): Int =
+        prefs.getInt("snooze_${junction.key}", DEFAULT_SNOOZE_MINUTES)
 
-    fun setSnoozeMinutes(minutes: Int) =
-        prefs.edit { putInt(KEY_SNOOZE, minutes) }
+    fun setSnoozeMinutes(junction: Junction, minutes: Int) =
+        prefs.edit { putInt("snooze_${junction.key}", minutes) }
 
     fun anyEnabled(): Boolean = Junction.entries.any { isEnabled(it) }
+
+    /**
+     * Chosen app background — a built-in key (see AppBackground) or "custom", in which
+     * case [backgroundUri] holds the user's picked image.
+     */
+    var backgroundKey: String
+        get() = prefs.getString(KEY_BG_KEY, DEFAULT_BACKGROUND_KEY) ?: DEFAULT_BACKGROUND_KEY
+        set(value) = prefs.edit { putString(KEY_BG_KEY, value) }
+
+    var backgroundUri: String?
+        get() = prefs.getString(KEY_BG_URI, null)
+        set(value) = prefs.edit {
+            if (value == null) remove(KEY_BG_URI) else putString(KEY_BG_URI, value)
+        }
 
     /**
      * Last known coordinates. Cached so the background re-arm and a cold start with
@@ -73,9 +88,13 @@ class SandhyaPrefs(context: Context) {
         /** Snooze durations offered in the picker, in minutes. */
         val SNOOZE_CHOICES = listOf(5, 10, 15, 20, 30)
 
+        const val DEFAULT_BACKGROUND_KEY = "default"
+        const val CUSTOM_BACKGROUND_KEY = "custom"
+
         private const val KEY_LAT = "latitude"
         private const val KEY_LNG = "longitude"
         private const val KEY_LOCATION_NAME = "location_name"
-        private const val KEY_SNOOZE = "snooze_minutes"
+        private const val KEY_BG_KEY = "background_key"
+        private const val KEY_BG_URI = "background_uri"
     }
 }

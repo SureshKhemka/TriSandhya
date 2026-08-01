@@ -24,16 +24,37 @@
     <string name="offset_at_time">At the exact time</string>
     <string name="offset_minutes_before">%1$d min before</string>
     <string name="offset_dialog_title">Remind me…</string>
+    <string name="remind_chip_before">Remind %1$d min before</string>
+    <string name="remind_chip_exact">Remind at exact time</string>
     <string name="offset_slider_hint">Slide to pick any time from exact to 1 hour before.</string>
     <string name="offset_chip_exact">Exact</string>
     <string name="offset_chip_minutes">%1$d</string>
 
     <!-- Snooze -->
     <string name="snooze">Snooze</string>
-    <string name="snooze_duration_label">Snooze duration</string>
     <string name="snooze_dialog_title">Snooze for…</string>
     <string name="snooze_minutes">%1$d min</string>
+    <string name="snooze_button">Snooze %1$d min</string>
     <string name="snoozed_toast">Snoozed — rings in %1$d min</string>
+    <string name="cancel_snooze">Cancel</string>
+    <string name="snooze_cancelled_toast">Snooze cancelled</string>
+
+    <!-- Snoozed-status notification -->
+    <string name="channel_snoozed">Snoozed reminders</string>
+    <string name="channel_snoozed_description">Shows when an alarm is snoozed, with an option to cancel it</string>
+    <string name="snoozed_title">%1$s snoozed</string>
+    <string name="snoozed_body">Rings at %1$s</string>
+
+    <!-- Background -->
+    <string name="background_label">Background</string>
+    <string name="background_dialog_title">Choose a background</string>
+    <string name="background_choose_photo">My photo</string>
+    <string name="background_photo_error">Couldn\'t use that image.</string>
+    <string name="bg_default">Default</string>
+    <string name="bg_dawn">Dawn</string>
+    <string name="bg_dusk">Dusk</string>
+    <string name="bg_night">Night</string>
+    <string name="bg_temple">Temple gold</string>
 
     <!-- Status messages -->
     <string name="detecting">Detecting location…</string>
@@ -62,9 +83,24 @@
     <!-- Alarm notification -->
     <string name="channel_alarms">Sandhya alarms</string>
     <string name="channel_alarms_description">Alarms for sunrise, solar noon, and sunset</string>
-    <string name="alarm_title">%1$s</string>
-    <string name="alarm_body">It\'s time — %1$s</string>
-    <string name="alarm_screen_subtitle">Time for your sandhya.</string>
+
+    <!-- Alarm wording: names the upcoming event and when it is, never "now" unless it is -->
+    <string name="alarm_title_before">%1$s in %2$s</string>
+    <string name="alarm_title_now">%1$s now</string>
+    <string name="alarm_title_after">%1$s was %2$s ago</string>
+    <string name="alarm_body_at">%1$s at %2$s</string>
+    <string name="alarm_rel_before">in %1$s</string>
+    <string name="alarm_rel_now">now</string>
+    <string name="alarm_rel_after">%1$s ago</string>
+    <string name="alarm_hours_minutes">%1$dh %2$dmin</string>
+    <plurals name="alarm_minutes">
+        <item quantity="one">%d minute</item>
+        <item quantity="other">%d minutes</item>
+    </plurals>
+    <plurals name="alarm_hours">
+        <item quantity="one">%d hour</item>
+        <item quantity="other">%d hours</item>
+    </plurals>
 
     <!-- Permission banners -->
     <string name="banner_exact_alarm">Exact alarms are turned off for TriSandhya, so alarms may fire late. Enable them for on-time reminders.</string>
