@@ -63,57 +63,62 @@
 
     </LinearLayout>
 
-    <LinearLayout
+    <!--
+      The reminder and snooze controls are Action chips (outlined, with an icon) so
+      they clearly read as tappable settings rather than static labels. A ChipGroup
+      wraps them to a second line on narrow screens instead of clipping.
+    -->
+    <com.google.android.material.chip.ChipGroup
+        android:id="@+id/config_chips"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingStart="46dp"
-        android:paddingEnd="0dp">
+        android:paddingStart="44dp"
+        app:chipSpacingVertical="4dp"
+        app:singleLine="false">
 
-        <com.google.android.material.button.MaterialButton
+        <com.google.android.material.chip.Chip
             android:id="@+id/btn_offset"
-            style="@style/Widget.MaterialComponents.Button.TextButton"
+            style="@style/Widget.MaterialComponents.Chip.Action"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
-            android:minHeight="36dp"
-            android:minWidth="0dp"
-            android:paddingStart="6dp"
-            android:paddingEnd="6dp"
-            android:textAllCaps="false"
-            android:textColor="@color/accent"
-            android:textSize="12sp"
-            tools:text="10 min before" />
+            android:checkable="false"
+            android:textColor="@color/text_primary"
+            app:chipBackgroundColor="@color/card_bg"
+            app:chipIcon="@drawable/ic_alarm"
+            app:chipIconSize="16dp"
+            app:chipIconTint="@color/accent"
+            app:chipStrokeColor="@color/accent"
+            app:chipStrokeWidth="1dp"
+            app:ensureMinTouchTargetSize="true"
+            tools:text="Remind 10 min before" />
 
-        <com.google.android.material.button.MaterialButton
+        <com.google.android.material.chip.Chip
             android:id="@+id/btn_snooze"
-            style="@style/Widget.MaterialComponents.Button.TextButton"
+            style="@style/Widget.MaterialComponents.Chip.Action"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
-            android:minHeight="36dp"
-            android:minWidth="0dp"
-            android:paddingStart="6dp"
-            android:paddingEnd="6dp"
-            android:textAllCaps="false"
-            android:textColor="@color/text_secondary"
-            android:textSize="12sp"
-            tools:text="Snooze: 10 min" />
+            android:checkable="false"
+            android:textColor="@color/text_primary"
+            app:chipBackgroundColor="@color/card_bg"
+            app:chipIcon="@drawable/ic_snooze"
+            app:chipIconSize="16dp"
+            app:chipIconTint="@color/text_secondary"
+            app:chipStrokeColor="@color/card_stroke"
+            app:chipStrokeWidth="1dp"
+            app:ensureMinTouchTargetSize="true"
+            tools:text="Snooze 10 min" />
 
-        <TextView
-            android:id="@+id/tv_next"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:gravity="end"
-            android:paddingStart="4dp"
-            android:textColor="@color/text_secondary"
-            android:textSize="11sp"
-            tools:text="Thu 5:02 AM" />
+    </com.google.android.material.chip.ChipGroup>
 
-    </LinearLayout>
+    <TextView
+        android:id="@+id/tv_next"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="end"
+        android:paddingTop="2dp"
+        android:paddingEnd="4dp"
+        android:textColor="@color/text_secondary"
+        android:textSize="11sp"
+        tools:text="Thu 5:02 AM" />
 
 </LinearLayout>

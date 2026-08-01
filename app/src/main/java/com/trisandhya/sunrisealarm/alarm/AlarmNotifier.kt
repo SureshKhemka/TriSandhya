@@ -17,6 +17,7 @@ import androidx.core.content.getSystemService
 import com.trisandhya.sunrisealarm.R
 import com.trisandhya.sunrisealarm.model.Junction
 import com.trisandhya.sunrisealarm.ui.AlarmActivity
+import com.trisandhya.sunrisealarm.util.AlarmPhrasing
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -79,7 +80,7 @@ object AlarmNotifier {
         }
     }
 
-    fun notify(context: Context, junction: Junction, firedAt: ZonedDateTime) {
+    fun notify(context: Context, junction: Junction, eventTime: ZonedDateTime) {
         ensureChannels(context)
         // Guard kept inline so lint's MissingPermission flow analysis can see it; it
         // does not follow into helper methods. The SDK_INT half is load-bearing:
@@ -93,13 +94,12 @@ object AlarmNotifier {
             return
         }
 
-        val label = context.getString(junction.labelRes)
-        val timeText = firedAt.format(timeFormat)
+        val eventMillis = eventTime.toInstant().toEpochMilli()
 
         val fullScreenIntent = Intent(context, AlarmActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
             putExtra(AlarmActivity.EXTRA_JUNCTION, junction.key)
-            putExtra(AlarmActivity.EXTRA_TIME, timeText)
+            putExtra(SandhyaScheduler.EXTRA_EVENT_TIME, eventMillis)
         }
         val fullScreenPending = PendingIntent.getActivity(
             context,
@@ -108,10 +108,11 @@ object AlarmNotifier {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val now = ZonedDateTime.now()
         val notification = NotificationCompat.Builder(context, ALARM_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_sandhya_notification)
-            .setContentTitle(context.getString(R.string.alarm_title, label))
-            .setContentText(context.getString(R.string.alarm_body, timeText))
+            .setContentTitle(AlarmPhrasing.title(context, junction, eventTime, now))
+            .setContentText(AlarmPhrasing.body(context, junction, eventTime))
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -123,7 +124,8 @@ object AlarmNotifier {
             .addAction(
                 0,
                 context.getString(R.string.snooze),
-                actionIntent(context, junction, SandhyaScheduler.ACTION_SNOOZE, SNOOZE_ACTION_OFFSET)
+                // Carries the event so a snoozed re-ring still refers to the same event.
+                actionIntent(context, junction, SandhyaScheduler.ACTION_SNOOZE, SNOOZE_ACTION_OFFSET, eventMillis)
             )
             .addAction(
                 0,
@@ -178,11 +180,13 @@ object AlarmNotifier {
         context: Context,
         junction: Junction,
         action: String,
-        codeOffset: Int
+        codeOffset: Int,
+        eventMillis: Long = 0L
     ): PendingIntent {
         val intent = Intent(context, AlarmReceiver::class.java).apply {
             this.action = action
             putExtra(SandhyaScheduler.EXTRA_JUNCTION, junction.key)
+            putExtra(SandhyaScheduler.EXTRA_EVENT_TIME, eventMillis)
         }
         return PendingIntent.getBroadcast(
             context,

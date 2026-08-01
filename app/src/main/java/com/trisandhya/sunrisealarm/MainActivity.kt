@@ -227,7 +227,11 @@ class MainActivity : AppCompatActivity() {
         }
         rowBinding.switchEnabled.contentDescription = getString(row.junction.labelRes)
 
-        rowBinding.btnOffset.text = offsetLabel(row.offsetMinutes)
+        rowBinding.btnOffset.text = if (row.offsetMinutes == 0) {
+            getString(R.string.remind_chip_exact)
+        } else {
+            getString(R.string.remind_chip_before, row.offsetMinutes)
+        }
         rowBinding.btnOffset.setOnClickListener { showOffsetDialog(row.junction, row.offsetMinutes) }
 
         rowBinding.btnSnooze.text = getString(R.string.snooze_button, row.snoozeMinutes)

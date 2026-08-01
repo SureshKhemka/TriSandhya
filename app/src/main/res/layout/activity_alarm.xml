@@ -14,26 +14,29 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:textColor="@color/text_primary"
-        android:textSize="34sp"
+        android:textSize="40sp"
         android:textStyle="bold"
-        tools:text="Sunrise" />
+        tools:text="Sunset" />
 
+    <!-- Relative to the event ("in 10 minutes" / "now" / "10 minutes ago"). -->
+    <TextView
+        android:id="@+id/tv_relative"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:textColor="@color/accent"
+        android:textSize="18sp"
+        tools:text="in 10 minutes" />
+
+    <!-- The absolute event time — the unambiguous anchor. -->
     <TextView
         android:id="@+id/tv_time"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
+        android:layout_marginTop="4dp"
         android:textColor="@color/text_secondary"
-        android:textSize="20sp" />
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="24dp"
-        android:gravity="center"
-        android:text="@string/alarm_screen_subtitle"
-        android:textColor="@color/text_secondary"
-        android:textSize="15sp" />
+        android:textSize="24sp"
+        tools:text="6:46 PM" />
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btn_snooze"

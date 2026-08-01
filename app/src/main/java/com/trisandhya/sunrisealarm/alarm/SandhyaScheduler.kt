@@ -89,7 +89,10 @@ class SandhyaScheduler(private val context: Context) {
     @SuppressLint("MissingPermission")
     fun schedule(junction: Junction): ZonedDateTime? {
         val fireAt = nextOccurrence(junction) ?: return null
-        return armAt(junction, fireAt, isSnooze = false)
+        // The event itself is the fire time plus the offset that was subtracted to
+        // schedule it. Carried on the alarm so the notification can name the event.
+        val eventTime = fireAt.plusMinutes(prefs.offsetMinutes(junction).toLong())
+        return armAt(junction, fireAt, isSnooze = false, eventMillis = eventTime.toInstant().toEpochMilli())
     }
 
     /**
@@ -101,17 +104,30 @@ class SandhyaScheduler(private val context: Context) {
      *
      * @return the instant the snooze will fire, or null if it could not be scheduled.
      */
+    /**
+     * Snoozes, preserving the original [eventMillis] so a re-ring still refers to the
+     * same event ("Sunset was 5 minutes ago") rather than a moving target.
+     */
     @SuppressLint("MissingPermission")
-    fun snooze(junction: Junction, now: ZonedDateTime = ZonedDateTime.now()): ZonedDateTime? {
+    fun snooze(
+        junction: Junction,
+        eventMillis: Long,
+        now: ZonedDateTime = ZonedDateTime.now()
+    ): ZonedDateTime? {
         val fireAt = now.plusMinutes(prefs.snoozeMinutes(junction).toLong())
-        return armAt(junction, fireAt, isSnooze = true)
+        return armAt(junction, fireAt, isSnooze = true, eventMillis = eventMillis)
     }
 
     @SuppressLint("MissingPermission")
-    private fun armAt(junction: Junction, fireAt: ZonedDateTime, isSnooze: Boolean): ZonedDateTime? {
+    private fun armAt(
+        junction: Junction,
+        fireAt: ZonedDateTime,
+        isSnooze: Boolean,
+        eventMillis: Long
+    ): ZonedDateTime? {
         val manager = alarmManager ?: return null
         val triggerAt = fireAt.toInstant().toEpochMilli()
-        val operation = alarmPendingIntent(junction, isSnooze)
+        val operation = alarmPendingIntent(junction, isSnooze, eventMillis)
 
         if (canScheduleExact()) {
             // A devotional alarm is time-critical; setExactAndAllowWhileIdle is the
@@ -144,11 +160,16 @@ class SandhyaScheduler(private val context: Context) {
             true
         }
 
-    private fun alarmPendingIntent(junction: Junction, isSnooze: Boolean): PendingIntent {
+    private fun alarmPendingIntent(
+        junction: Junction,
+        isSnooze: Boolean,
+        eventMillis: Long = 0L
+    ): PendingIntent {
         val intent = Intent(context, AlarmReceiver::class.java).apply {
             action = ACTION_SANDHYA_ALARM
             putExtra(EXTRA_JUNCTION, junction.key)
             putExtra(EXTRA_IS_SNOOZE, isSnooze)
+            putExtra(EXTRA_EVENT_TIME, eventMillis)
         }
         // Distinct request code so the snooze one-shot and the daily alarm are two
         // separate PendingIntents that never clobber each other.
@@ -164,6 +185,9 @@ class SandhyaScheduler(private val context: Context) {
         const val ACTION_CANCEL_SNOOZE = "com.trisandhya.sunrisealarm.ACTION_CANCEL_SNOOZE"
         const val EXTRA_JUNCTION = "junction"
         const val EXTRA_IS_SNOOZE = "is_snooze"
+
+        /** Epoch millis of the actual solar event this alarm is for. */
+        const val EXTRA_EVENT_TIME = "event_time"
 
         /** Added to a junction's request code to key its snooze PendingIntent apart. */
         const val SNOOZE_CODE_OFFSET = 1000

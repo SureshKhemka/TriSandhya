@@ -13,6 +13,10 @@ import com.trisandhya.sunrisealarm.alarm.AlarmReceiver
 import com.trisandhya.sunrisealarm.alarm.SandhyaScheduler
 import com.trisandhya.sunrisealarm.databinding.ActivityAlarmBinding
 import com.trisandhya.sunrisealarm.model.Junction
+import com.trisandhya.sunrisealarm.util.AlarmPhrasing
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZonedDateTime
 
 /**
  * Full-screen surface shown when a sandhya alarm fires.
@@ -47,33 +51,41 @@ class AlarmActivity : AppCompatActivity() {
         }
 
         val junction = Junction.fromKey(intent.getStringExtra(EXTRA_JUNCTION))
-        val timeText = intent.getStringExtra(EXTRA_TIME).orEmpty()
+        val eventMillis = intent.getLongExtra(SandhyaScheduler.EXTRA_EVENT_TIME, 0L)
+        val event = if (eventMillis > 0L) {
+            Instant.ofEpochMilli(eventMillis).atZone(ZoneId.systemDefault())
+        } else {
+            ZonedDateTime.now()
+        }
 
         if (junction != null) {
             binding.tvJunction.text = getString(junction.labelRes)
             binding.tvJunction.setTextColor(ContextCompat.getColor(this, junction.colorRes))
         }
-        binding.tvTime.text = timeText
+        // Headline the event and its clock time; the relative line reflects the offset.
+        binding.tvRelative.text = AlarmPhrasing.relative(this, event, ZonedDateTime.now())
+        binding.tvTime.text = AlarmPhrasing.clock(event)
 
         // Route both buttons through AlarmReceiver so snooze/dismiss have a single code
         // path shared with the notification actions (scheduling, the snoozed status
         // notification, and the toast all live there).
         binding.btnSnooze.setOnClickListener {
-            junction?.let { sendAction(SandhyaScheduler.ACTION_SNOOZE, it) }
+            junction?.let { sendAction(SandhyaScheduler.ACTION_SNOOZE, it, eventMillis) }
             finish()
         }
 
         binding.btnDismiss.setOnClickListener {
-            junction?.let { sendAction(SandhyaScheduler.ACTION_DISMISS, it) }
+            junction?.let { sendAction(SandhyaScheduler.ACTION_DISMISS, it, eventMillis) }
             finish()
         }
     }
 
-    private fun sendAction(action: String, junction: Junction) {
+    private fun sendAction(action: String, junction: Junction, eventMillis: Long) {
         sendBroadcast(
             Intent(this, AlarmReceiver::class.java).apply {
                 this.action = action
                 putExtra(SandhyaScheduler.EXTRA_JUNCTION, junction.key)
+                putExtra(SandhyaScheduler.EXTRA_EVENT_TIME, eventMillis)
             }
         )
     }
@@ -94,6 +106,5 @@ class AlarmActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_JUNCTION = "junction"
-        const val EXTRA_TIME = "time"
     }
 }
