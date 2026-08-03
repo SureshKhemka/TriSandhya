@@ -29,14 +29,42 @@ class SandhyaPrefs(context: Context) {
     fun setOffsetMinutes(junction: Junction, minutes: Int) =
         prefs.edit { putInt("offset_${junction.key}", minutes.coerceIn(0, MAX_OFFSET_MINUTES)) }
 
-    /** Minutes a fired alarm is pushed back when the user snoozes it, per junction. */
+    /**
+     * Minutes a fired alarm is pushed back when the user snoozes it, per junction.
+     *
+     * Clamped to strictly less than the reminder offset so a snooze always re-rings
+     * *before* the event — snoozing by mistake must not cause the event to be missed.
+     */
     fun snoozeMinutes(junction: Junction): Int =
-        prefs.getInt("snooze_${junction.key}", DEFAULT_SNOOZE_MINUTES)
+        clampSnooze(
+            prefs.getInt("snooze_${junction.key}", DEFAULT_SNOOZE_MINUTES),
+            offsetMinutes(junction)
+        )
 
     fun setSnoozeMinutes(junction: Junction, minutes: Int) =
         prefs.edit { putInt("snooze_${junction.key}", minutes) }
 
+    /** True when the reminder offset leaves room for a snooze strictly before the event. */
+    fun isSnoozeAllowed(junction: Junction): Boolean =
+        snoozeChoicesFor(offsetMinutes(junction)).isNotEmpty()
+
     fun anyEnabled(): Boolean = Junction.entries.any { isEnabled(it) }
+
+    /**
+     * The user's alarm sound, or null for the system default alarm tone. A content
+     * URI (a system tone, or the user's own audio granted persistable read access).
+     */
+    var alarmSoundUri: String?
+        get() = prefs.getString(KEY_SOUND_URI, null)
+        set(value) = prefs.edit {
+            if (value == null) remove(KEY_SOUND_URI) else putString(KEY_SOUND_URI, value)
+        }
+
+    var alarmSoundTitle: String?
+        get() = prefs.getString(KEY_SOUND_TITLE, null)
+        set(value) = prefs.edit {
+            if (value == null) remove(KEY_SOUND_TITLE) else putString(KEY_SOUND_TITLE, value)
+        }
 
     /**
      * Chosen app background — a built-in key (see AppBackground) or "custom", in which
@@ -85,8 +113,19 @@ class SandhyaPrefs(context: Context) {
 
         const val DEFAULT_SNOOZE_MINUTES = 10
 
-        /** Snooze durations offered in the picker, in minutes. */
-        val SNOOZE_CHOICES = listOf(5, 10, 15, 20, 30)
+        /** All snooze durations, in minutes; the picker offers only those below the offset. */
+        val SNOOZE_CHOICES = listOf(1, 2, 3, 5, 10, 15, 20, 30)
+
+        /** Snooze durations valid for a given reminder offset: strictly less than it. */
+        fun snoozeChoicesFor(offsetMinutes: Int): List<Int> =
+            SNOOZE_CHOICES.filter { it < offsetMinutes }
+
+        /** Clamps a stored snooze to the largest valid choice for the offset. */
+        fun clampSnooze(minutes: Int, offsetMinutes: Int): Int {
+            val valid = snoozeChoicesFor(offsetMinutes)
+            if (valid.isEmpty()) return DEFAULT_SNOOZE_MINUTES // snooze disabled; value unused
+            return valid.filter { it <= minutes }.maxOrNull() ?: valid.first()
+        }
 
         const val DEFAULT_BACKGROUND_KEY = "default"
         const val CUSTOM_BACKGROUND_KEY = "custom"
@@ -96,5 +135,7 @@ class SandhyaPrefs(context: Context) {
         private const val KEY_LOCATION_NAME = "location_name"
         private const val KEY_BG_KEY = "background_key"
         private const val KEY_BG_URI = "background_uri"
+        private const val KEY_SOUND_URI = "alarm_sound_uri"
+        private const val KEY_SOUND_TITLE = "alarm_sound_title"
     }
 }

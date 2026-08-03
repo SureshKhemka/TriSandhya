@@ -35,9 +35,21 @@
     <string name="snooze_dialog_title">Snooze for…</string>
     <string name="snooze_minutes">%1$d min</string>
     <string name="snooze_button">Snooze %1$d min</string>
+    <string name="snooze_button_off">Snooze off</string>
+    <string name="snooze_disabled_hint">Set the reminder to 2 min or more before to allow a snooze.</string>
+    <string name="snooze_reduced">Snooze reduced to %1$d min to stay before the reminder.</string>
     <string name="snoozed_toast">Snoozed — rings in %1$d min</string>
     <string name="cancel_snooze">Cancel</string>
     <string name="snooze_cancelled_toast">Snooze cancelled</string>
+
+    <!-- Alarm sound -->
+    <string name="alarm_sound_label">Alarm sound</string>
+    <string name="alarm_sound_default">Default</string>
+    <string name="alarm_sound_dialog_title">Alarm sound</string>
+    <string name="alarm_sound_use_default">Default alarm tone</string>
+    <string name="alarm_sound_system">Phone\'s alarm tones…</string>
+    <string name="alarm_sound_custom">My own audio…</string>
+    <string name="alarm_sound_picker_title">Select an alarm tone</string>
 
     <!-- Snoozed-status notification -->
     <string name="channel_snoozed">Snoozed reminders</string>

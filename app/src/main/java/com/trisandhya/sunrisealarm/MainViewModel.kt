@@ -31,6 +31,7 @@ data class JunctionRow(
     val enabled: Boolean,
     val offsetMinutes: Int,
     val snoozeMinutes: Int,
+    val snoozeAllowed: Boolean,
     val nextFireAt: ZonedDateTime?
 )
 
@@ -44,7 +45,8 @@ data class UiState(
     val statusText: String? = null,
     val needsExactAlarmPermission: Boolean = false,
     val backgroundKey: String = SandhyaPrefs.DEFAULT_BACKGROUND_KEY,
-    val backgroundUri: String? = null
+    val backgroundUri: String? = null,
+    val alarmSoundTitle: String? = null
 )
 
 /** Actions a Snackbar can offer when something goes wrong. */
@@ -201,7 +203,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setOffsetMinutes(junction: Junction, minutes: Int) {
+        val snoozeBefore = prefs.snoozeMinutes(junction)
         prefs.setOffsetMinutes(junction, minutes)
+        // Lowering the offset can force the snooze below it; snoozeMinutes() clamps on
+        // read, so just report it if the effective value dropped.
+        val snoozeAfter = prefs.snoozeMinutes(junction)
+        if (prefs.isSnoozeAllowed(junction) && snoozeAfter < snoozeBefore) {
+            emit(UiEvent.Message(string(R.string.snooze_reduced, snoozeAfter)))
+        }
         recompute()
         if (prefs.isEnabled(junction)) {
             scheduler.schedule(junction)?.let {
@@ -219,6 +228,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun setBackground(key: String, uri: String? = null) {
         prefs.backgroundKey = key
         prefs.backgroundUri = uri
+        recompute()
+    }
+
+    /** Sets the alarm sound (uri null = system default), with a title for display. */
+    fun setAlarmSound(uri: String?, title: String?) {
+        prefs.alarmSoundUri = uri
+        prefs.alarmSoundTitle = title
         recompute()
     }
 
@@ -252,12 +268,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 rows = Junction.entries.map {
                     JunctionRow(
                         it, null, prefs.isEnabled(it),
-                        prefs.offsetMinutes(it), prefs.snoozeMinutes(it), null
+                        prefs.offsetMinutes(it), prefs.snoozeMinutes(it),
+                        prefs.isSnoozeAllowed(it), null
                     )
                 },
                 nextAlarm = null,
                 backgroundKey = prefs.backgroundKey,
-                backgroundUri = prefs.backgroundUri
+                backgroundUri = prefs.backgroundUri,
+                alarmSoundTitle = prefs.alarmSoundTitle
             )
             return
         }
@@ -277,6 +295,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 enabled = prefs.isEnabled(junction),
                 offsetMinutes = prefs.offsetMinutes(junction),
                 snoozeMinutes = prefs.snoozeMinutes(junction),
+                snoozeAllowed = prefs.isSnoozeAllowed(junction),
                 nextFireAt = scheduler.nextOccurrence(junction)
             )
         }
@@ -288,7 +307,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             rows = rows,
             nextAlarm = scheduler.nextEnabledAlarm(),
             backgroundKey = prefs.backgroundKey,
-            backgroundUri = prefs.backgroundUri
+            backgroundUri = prefs.backgroundUri,
+            alarmSoundTitle = prefs.alarmSoundTitle
         )
     }
 
