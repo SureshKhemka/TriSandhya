@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.widget.Toast
+import androidx.core.content.ContextCompat
 import com.trisandhya.sunrisealarm.R
 import com.trisandhya.sunrisealarm.data.SandhyaPrefs
 import com.trisandhya.sunrisealarm.model.Junction
@@ -40,6 +41,7 @@ class AlarmReceiver : BroadcastReceiver() {
             }
 
             SandhyaScheduler.ACTION_DISMISS -> {
+                AlarmSoundService.stop(context)
                 AlarmNotifier.cancel(context, junction)
                 AlarmNotifier.cancelSnoozed(context, junction)
                 scheduler.cancelSnooze(junction)
@@ -66,12 +68,30 @@ class AlarmReceiver : BroadcastReceiver() {
             return
         }
 
-        AlarmNotifier.notify(context, junction, eventTime(context, junction, intent))
+        startAlarmSound(context, junction, eventTime(context, junction, intent))
 
         // A snooze re-fire must not re-arm the daily alarm: tomorrow was already
         // scheduled when the original alarm fired. Only the real daily firing re-arms.
         val isSnooze = intent.getBooleanExtra(SandhyaScheduler.EXTRA_IS_SNOOZE, false)
         if (!isSnooze) scheduler.schedule(junction)
+    }
+
+    /**
+     * Starts the foreground service that rings and shows the alarm. If it can't start
+     * (e.g. background-start blocked), falls back to a plain notification whose channel
+     * carries the default alarm sound, so the alarm is never silent.
+     */
+    private fun startAlarmSound(context: Context, junction: Junction, eventTime: ZonedDateTime) {
+        val intent = Intent(context, AlarmSoundService::class.java).apply {
+            action = AlarmSoundService.ACTION_PLAY
+            putExtra(SandhyaScheduler.EXTRA_JUNCTION, junction.key)
+            putExtra(SandhyaScheduler.EXTRA_EVENT_TIME, eventTime.toInstant().toEpochMilli())
+        }
+        try {
+            ContextCompat.startForegroundService(context, intent)
+        } catch (e: Exception) {
+            AlarmNotifier.notifyFallback(context, junction, eventTime)
+        }
     }
 
     private fun snooze(
@@ -80,6 +100,7 @@ class AlarmReceiver : BroadcastReceiver() {
         scheduler: SandhyaScheduler,
         intent: Intent
     ) {
+        AlarmSoundService.stop(context)
         AlarmNotifier.cancel(context, junction)
         val eventMillis = eventTime(context, junction, intent).toInstant().toEpochMilli()
         val fireAt = scheduler.snooze(junction, eventMillis)

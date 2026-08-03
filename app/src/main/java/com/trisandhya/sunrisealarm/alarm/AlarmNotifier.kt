@@ -1,6 +1,7 @@
 package com.trisandhya.sunrisealarm.alarm
 
 import android.Manifest
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -25,7 +26,16 @@ import java.util.Locale
 /** Builds and posts the alarm and snoozed-status notifications, and owns their channels. */
 object AlarmNotifier {
 
-    private const val ALARM_CHANNEL_ID = "sandhya_alarms"
+    // Bumped from the original "sandhya_alarms": a channel's sound is immutable once
+    // created, and the alarm sound is now played by AlarmSoundService (looping, and
+    // user-selectable), so this channel is silent. The legacy channel is deleted.
+    private const val ALARM_CHANNEL_ID = "sandhya_alarms_v2"
+    private const val LEGACY_ALARM_CHANNEL_ID = "sandhya_alarms"
+
+    // Fallback channel that carries the default alarm sound, used only if the
+    // foreground playback service cannot start (so the alarm is never silent).
+    private const val ALARM_FALLBACK_CHANNEL_ID = "sandhya_alarms_fallback"
+
     private const val SNOOZED_CHANNEL_ID = "sandhya_snoozed"
 
     // Added to a junction's request code so each action button gets a distinct
@@ -43,12 +53,12 @@ object AlarmNotifier {
     fun ensureChannels(context: Context) {
         val manager = context.getSystemService<NotificationManager>() ?: return
 
-        if (manager.getNotificationChannel(ALARM_CHANNEL_ID) == null) {
-            val attributes = AudioAttributes.Builder()
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .setUsage(AudioAttributes.USAGE_ALARM)
-                .build()
+        // The old sound-carrying channel is obsolete now that the service plays sound.
+        manager.deleteNotificationChannel(LEGACY_ALARM_CHANNEL_ID)
 
+        if (manager.getNotificationChannel(ALARM_CHANNEL_ID) == null) {
+            // Silent, but still HIGH so it heads-up and shows full-screen; the service
+            // provides the (looping, user-chosen) sound.
             manager.createNotificationChannel(
                 NotificationChannel(
                     ALARM_CHANNEL_ID,
@@ -56,6 +66,24 @@ object AlarmNotifier {
                     NotificationManager.IMPORTANCE_HIGH
                 ).apply {
                     description = context.getString(R.string.channel_alarms_description)
+                    setSound(null, null)
+                    enableVibration(true)
+                    lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
+                }
+            )
+        }
+
+        if (manager.getNotificationChannel(ALARM_FALLBACK_CHANNEL_ID) == null) {
+            val attributes = AudioAttributes.Builder()
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .setUsage(AudioAttributes.USAGE_ALARM)
+                .build()
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    ALARM_FALLBACK_CHANNEL_ID,
+                    context.getString(R.string.channel_alarms),
+                    NotificationManager.IMPORTANCE_HIGH
+                ).apply {
                     setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM), attributes)
                     enableVibration(true)
                     lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
@@ -80,20 +108,21 @@ object AlarmNotifier {
         }
     }
 
-    fun notify(context: Context, junction: Junction, eventTime: ZonedDateTime) {
-        ensureChannels(context)
-        // Guard kept inline so lint's MissingPermission flow analysis can see it; it
-        // does not follow into helper methods. The SDK_INT half is load-bearing:
-        // POST_NOTIFICATIONS does not exist before API 33, so an unguarded check
-        // reports DENIED on API 26-32 and would suppress every notification there.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(
-                context, Manifest.permission.POST_NOTIFICATIONS
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            return
-        }
+    /** Notification id for a junction's ringing alarm (also the service's FGS id). */
+    fun alarmNotificationId(junction: Junction): Int = junction.requestCode
 
+    /**
+     * Builds the ringing-alarm notification (full-screen intent + Snooze/Dismiss). The
+     * service posts this via startForeground; [loud] = true uses the sound-carrying
+     * fallback channel for the no-service path.
+     */
+    fun buildAlarmNotification(
+        context: Context,
+        junction: Junction,
+        eventTime: ZonedDateTime,
+        loud: Boolean = false
+    ): Notification {
+        ensureChannels(context)
         val eventMillis = eventTime.toInstant().toEpochMilli()
 
         val fullScreenIntent = Intent(context, AlarmActivity::class.java).apply {
@@ -108,19 +137,19 @@ object AlarmNotifier {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val now = ZonedDateTime.now()
-        val notification = NotificationCompat.Builder(context, ALARM_CHANNEL_ID)
+        val channelId = if (loud) ALARM_FALLBACK_CHANNEL_ID else ALARM_CHANNEL_ID
+        return NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.drawable.ic_sandhya_notification)
-            .setContentTitle(AlarmPhrasing.title(context, junction, eventTime, now))
+            .setContentTitle(AlarmPhrasing.title(context, junction, eventTime, ZonedDateTime.now()))
             .setContentText(AlarmPhrasing.body(context, junction, eventTime))
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(true)
+            .setOngoing(!loud) // the FGS notification is ongoing until dismissed/timeout
             .setContentIntent(fullScreenPending)
             // Wakes the screen when locked; degrades to a heads-up banner otherwise.
             .setFullScreenIntent(fullScreenPending, true)
-            .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM))
             .addAction(
                 0,
                 context.getString(R.string.snooze),
@@ -133,8 +162,23 @@ object AlarmNotifier {
                 actionIntent(context, junction, SandhyaScheduler.ACTION_DISMISS, DISMISS_ACTION_OFFSET)
             )
             .build()
+    }
 
-        NotificationManagerCompat.from(context).notify(junction.requestCode, notification)
+    /** Fallback post used only when the playback service cannot start; sound via channel. */
+    fun notifyFallback(context: Context, junction: Junction, eventTime: ZonedDateTime) {
+        // Guard kept inline so lint's MissingPermission flow analysis can see it; it
+        // does not follow into helper methods. The SDK_INT half is load-bearing:
+        // POST_NOTIFICATIONS does not exist before API 33, so an unguarded check
+        // reports DENIED on API 26-32 and would suppress every notification there.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                context, Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+        NotificationManagerCompat.from(context)
+            .notify(alarmNotificationId(junction), buildAlarmNotification(context, junction, eventTime, loud = true))
     }
 
     /**

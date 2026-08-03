@@ -307,6 +307,40 @@
 
             </LinearLayout>
 
+            <!-- ──────────────────────────── ALARM SOUND ──────────────────────────── -->
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="12dp"
+                android:paddingEnd="4dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/alarm_sound_label"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="14sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_alarm_sound"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxWidth="200dp"
+                    android:maxLines="1"
+                    android:textAllCaps="false"
+                    android:textColor="@color/accent"
+                    android:textSize="14sp"
+                    tools:text="Temple bell" />
+
+            </LinearLayout>
+
             <!-- ──────────────────────────────── INFO TEXT ──────────────────────────────── -->
 
             <TextView

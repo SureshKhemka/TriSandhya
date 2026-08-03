@@ -5,9 +5,11 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.OpenableColumns
 import android.provider.Settings
 import android.view.View
 import android.widget.ImageView
@@ -21,6 +23,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.IntentCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.Lifecycle
@@ -102,6 +105,35 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // System alarm-tone picker: returns a URI the media player can read directly.
+    private val ringtonePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode != RESULT_OK) return@registerForActivityResult
+        val uri = result.data?.let {
+            IntentCompat.getParcelableExtra(it, RingtoneManager.EXTRA_RINGTONE_PICKED_URI, Uri::class.java)
+        }
+        if (uri == null) {
+            viewModel.setAlarmSound(null, null) // "Default" chosen in the picker
+        } else {
+            val title = runCatching { RingtoneManager.getRingtone(this, uri)?.getTitle(this) }.getOrNull()
+            viewModel.setAlarmSound(uri.toString(), title)
+        }
+    }
+
+    // The user's own audio. Document-picker URIs are persistable, so we keep read
+    // access across reboots and hand the URI straight to the media player.
+    private val audioPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@registerForActivityResult
+        runCatching {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        val title = queryDisplayName(uri) ?: getString(R.string.alarm_sound_custom)
+        viewModel.setAlarmSound(uri.toString(), title)
+    }
+
     // ----------------------------------------------------------------------------------
     // Lifecycle
     // ----------------------------------------------------------------------------------
@@ -132,6 +164,7 @@ class MainActivity : AppCompatActivity() {
 
         binding.btnRefresh.setOnClickListener { requestLocation() }
         binding.btnBackground.setOnClickListener { showBackgroundDialog() }
+        binding.btnAlarmSound.setOnClickListener { showAlarmSoundDialog() }
 
         observeState()
         observeEvents()
@@ -194,6 +227,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.tvTodayDate.text = state.today.format(dateFormat)
+        binding.btnAlarmSound.text = state.alarmSoundTitle ?: getString(R.string.alarm_sound_default)
 
         state.rows.forEach { row -> renderRow(row, state.hasLocation) }
 
@@ -234,8 +268,19 @@ class MainActivity : AppCompatActivity() {
         }
         rowBinding.btnOffset.setOnClickListener { showOffsetDialog(row.junction, row.offsetMinutes) }
 
-        rowBinding.btnSnooze.text = getString(R.string.snooze_button, row.snoozeMinutes)
-        rowBinding.btnSnooze.setOnClickListener { showSnoozeDialog(row.junction, row.snoozeMinutes) }
+        // Snooze must be shorter than the reminder, so a very short reminder leaves no
+        // room for one — show it disabled with an explanation rather than a bad choice.
+        if (row.snoozeAllowed) {
+            rowBinding.btnSnooze.text = getString(R.string.snooze_button, row.snoozeMinutes)
+            rowBinding.btnSnooze.alpha = 1f
+            rowBinding.btnSnooze.setOnClickListener { showSnoozeDialog(row.junction, row.snoozeMinutes) }
+        } else {
+            rowBinding.btnSnooze.text = getString(R.string.snooze_button_off)
+            rowBinding.btnSnooze.alpha = 0.5f
+            rowBinding.btnSnooze.setOnClickListener {
+                Snackbar.make(binding.root, R.string.snooze_disabled_hint, Snackbar.LENGTH_LONG).show()
+            }
+        }
 
         rowBinding.tvNext.text = if (row.enabled && row.nextFireAt != null) {
             row.nextFireAt.format(nextFormat)
@@ -309,9 +354,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showSnoozeDialog(junction: Junction, current: Int) {
-        val choices = SandhyaPrefs.SNOOZE_CHOICES
+        // Only durations shorter than this junction's reminder offset, so a snooze
+        // always re-rings before the event.
+        val offset = viewModel.state.value.rows.firstOrNull { it.junction == junction }?.offsetMinutes
+            ?: SandhyaPrefs.DEFAULT_OFFSET_MINUTES
+        val choices = SandhyaPrefs.snoozeChoicesFor(offset)
+        if (choices.isEmpty()) {
+            Snackbar.make(binding.root, R.string.snooze_disabled_hint, Snackbar.LENGTH_LONG).show()
+            return
+        }
         val labels = choices.map { getString(R.string.snooze_minutes, it) }.toTypedArray()
-        val checked = choices.indexOf(current).takeIf { it >= 0 } ?: 0
+        val checked = choices.indexOf(current).takeIf { it >= 0 } ?: choices.lastIndex
 
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.snooze_dialog_title))
@@ -322,6 +375,46 @@ class MainActivity : AppCompatActivity() {
             .setNegativeButton(R.string.cancel, null)
             .show()
     }
+
+    // ----------------------------------------------------------------------------------
+    // Alarm sound
+    // ----------------------------------------------------------------------------------
+
+    private fun showAlarmSoundDialog() {
+        val options = arrayOf(
+            getString(R.string.alarm_sound_use_default),
+            getString(R.string.alarm_sound_system),
+            getString(R.string.alarm_sound_custom)
+        )
+        AlertDialog.Builder(this)
+            .setTitle(R.string.alarm_sound_dialog_title)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> viewModel.setAlarmSound(null, null)
+                    1 -> launchRingtonePicker()
+                    2 -> runCatching { audioPickerLauncher.launch(arrayOf("audio/*")) }
+                }
+            }
+            .show()
+    }
+
+    private fun launchRingtonePicker() {
+        val current = SandhyaPrefs(this).alarmSoundUri?.let { Uri.parse(it) }
+        val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+            putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALARM)
+            putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, getString(R.string.alarm_sound_picker_title))
+            putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
+            putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+            putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, current)
+        }
+        runCatching { ringtonePickerLauncher.launch(intent) }
+    }
+
+    private fun queryDisplayName(uri: Uri): String? = runCatching {
+        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+            if (it.moveToFirst()) it.getString(0) else null
+        }
+    }.getOrNull()
 
     // ----------------------------------------------------------------------------------
     // Background
