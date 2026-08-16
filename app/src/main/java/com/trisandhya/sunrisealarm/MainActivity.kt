@@ -1,6 +1,7 @@
 package com.trisandhya.sunrisealarm
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -91,6 +92,19 @@ class MainActivity : AppCompatActivity() {
         if (!granted) updateBanner()
     }
 
+    // "Allow all the time" location, needed only for the background update mode.
+    private val backgroundLocationLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        if (hasBackgroundLocation()) {
+            viewModel.setLocationMode(SandhyaPrefs.LOCATION_BACKGROUND)
+        } else {
+            Snackbar.make(binding.root, R.string.location_background_denied, Snackbar.LENGTH_LONG)
+                .setAction(R.string.open_settings) { openAppSettings() }
+                .show()
+        }
+    }
+
     // The system photo picker needs no permission. The chosen image is copied into
     // app storage so the background survives reboots (picker URIs are not durable).
     private val photoPickerLauncher = registerForActivityResult(
@@ -165,6 +179,7 @@ class MainActivity : AppCompatActivity() {
         binding.btnRefresh.setOnClickListener { requestLocation() }
         binding.btnBackground.setOnClickListener { showBackgroundDialog() }
         binding.btnAlarmSound.setOnClickListener { showAlarmSoundDialog() }
+        binding.btnLocationMode.setOnClickListener { showLocationModeDialog() }
 
         observeState()
         observeEvents()
@@ -183,8 +198,16 @@ class MainActivity : AppCompatActivity() {
         // The user may have changed exact-alarm or notification settings while away,
         // and the date may have rolled over.
         viewModel.recompute()
-        viewModel.refreshExactAlarmWarning()
+        viewModel.refreshSystemWarnings()
         updateBanner()
+
+        // Auto-refresh location on open if it's gone stale — this is the baseline that
+        // makes "I travelled and had to refresh manually" go away, no new permission.
+        val fine = hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+        val coarse = hasPermission(Manifest.permission.ACCESS_COARSE_LOCATION)
+        if ((fine || coarse) && viewModel.shouldRefreshOnOpen()) {
+            viewModel.refreshLocation(fine, coarse, silent = true)
+        }
     }
 
     // ----------------------------------------------------------------------------------
@@ -228,6 +251,7 @@ class MainActivity : AppCompatActivity() {
 
         binding.tvTodayDate.text = state.today.format(dateFormat)
         binding.btnAlarmSound.text = state.alarmSoundTitle ?: getString(R.string.alarm_sound_default)
+        binding.btnLocationMode.text = getString(locationModeLabel(state.locationMode))
 
         state.rows.forEach { row -> renderRow(row, state.hasLocation) }
 
@@ -415,6 +439,55 @@ class MainActivity : AppCompatActivity() {
             if (it.moveToFirst()) it.getString(0) else null
         }
     }.getOrNull()
+
+    // ----------------------------------------------------------------------------------
+    // Location updates
+    // ----------------------------------------------------------------------------------
+
+    private fun locationModeLabel(mode: String): Int = when (mode) {
+        SandhyaPrefs.LOCATION_DAILY -> R.string.location_mode_daily
+        SandhyaPrefs.LOCATION_BACKGROUND -> R.string.location_mode_background
+        else -> R.string.location_mode_open
+    }
+
+    private fun showLocationModeDialog() {
+        val modes = listOf(
+            SandhyaPrefs.LOCATION_OPEN,
+            SandhyaPrefs.LOCATION_DAILY,
+            SandhyaPrefs.LOCATION_BACKGROUND
+        )
+        val labels = modes.map { getString(locationModeLabel(it)) }.toTypedArray()
+        val checked = modes.indexOf(viewModel.state.value.locationMode).coerceAtLeast(0)
+
+        AlertDialog.Builder(this)
+            .setTitle(R.string.location_mode_dialog_title)
+            .setSingleChoiceItems(labels, checked) { dialog, which ->
+                when (modes[which]) {
+                    SandhyaPrefs.LOCATION_BACKGROUND -> selectBackgroundMode()
+                    else -> viewModel.setLocationMode(modes[which])
+                }
+                dialog.dismiss()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    /** Background updates need "all the time" location; request it before enabling. */
+    private fun selectBackgroundMode() {
+        when {
+            hasBackgroundLocation() -> viewModel.setLocationMode(SandhyaPrefs.LOCATION_BACKGROUND)
+            !hasPermission(Manifest.permission.ACCESS_FINE_LOCATION) &&
+                !hasPermission(Manifest.permission.ACCESS_COARSE_LOCATION) ->
+                requestLocation() // foreground first; the user can then pick background again
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ->
+                backgroundLocationLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+            else -> viewModel.setLocationMode(SandhyaPrefs.LOCATION_BACKGROUND)
+        }
+    }
+
+    private fun hasBackgroundLocation(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+            hasPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
 
     // ----------------------------------------------------------------------------------
     // Background
@@ -628,10 +701,16 @@ class MainActivity : AppCompatActivity() {
     private fun renderBanner(state: UiState) {
         val notificationsBlocked = !NotificationManagerCompat.from(this).areNotificationsEnabled()
 
+        // Most-severe first: a background restriction blocks everything; battery
+        // optimization defers/kills alarms (the likeliest silent-failure cause).
         when {
             state.needsExactAlarmPermission -> showBanner(R.string.banner_exact_alarm) {
                 openExactAlarmSettings()
             }
+            state.isBackgroundRestricted ->
+                showBanner(R.string.banner_background_restricted) { openAppSettings() }
+            state.needsBatteryExemption ->
+                showBanner(R.string.banner_battery) { requestBatteryExemption() }
             notificationsBlocked && state.rows.any { it.enabled } ->
                 showBanner(R.string.banner_notifications) { openAppSettings() }
             else -> binding.cardPermissionBanner.visibility = View.GONE
@@ -660,6 +739,24 @@ class MainActivity : AppCompatActivity() {
                 Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
                     .setData(Uri.fromParts("package", packageName, null))
             )
+        }
+    }
+
+    /**
+     * Asks the system to exempt the app from battery optimization so exact alarms
+     * are not deferred. Alarm apps are an accepted use of this request; if the
+     * direct prompt is unavailable, fall back to the battery-optimization list.
+     */
+    @SuppressLint("BatteryLife")
+    private fun requestBatteryExemption() {
+        runCatching {
+            startActivity(
+                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                    .setData(Uri.fromParts("package", packageName, null))
+            )
+        }.onFailure {
+            runCatching { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+                .onFailure { openAppSettings() }
         }
     }
 

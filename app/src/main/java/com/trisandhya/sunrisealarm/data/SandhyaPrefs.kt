@@ -102,6 +102,16 @@ class SandhyaPrefs(context: Context) {
 
     fun hasLocation(): Boolean = latitude != null && longitude != null
 
+    /** When location was last fixed, epoch millis; 0 if never. Gates on-open refresh. */
+    var lastLocationFixMillis: Long
+        get() = prefs.getLong(KEY_LAST_FIX, 0L)
+        set(value) = prefs.edit { putLong(KEY_LAST_FIX, value) }
+
+    /** How the app keeps location current: [LOCATION_OPEN], [LOCATION_DAILY], [LOCATION_BACKGROUND]. */
+    var locationMode: String
+        get() = prefs.getString(KEY_LOCATION_MODE, LOCATION_OPEN) ?: LOCATION_OPEN
+        set(value) = prefs.edit { putString(KEY_LOCATION_MODE, value) }
+
     companion object {
         const val DEFAULT_OFFSET_MINUTES = 10
 
@@ -130,6 +140,14 @@ class SandhyaPrefs(context: Context) {
         const val DEFAULT_BACKGROUND_KEY = "default"
         const val CUSTOM_BACKGROUND_KEY = "custom"
 
+        // Location update modes.
+        const val LOCATION_OPEN = "open"          // only when the app is opened
+        const val LOCATION_DAILY = "daily"        // once a day, foreground-service location
+        const val LOCATION_BACKGROUND = "background" // every few hours, background location
+
+        /** On-open refresh only re-fetches if the last fix is older than this. */
+        const val LOCATION_STALE_MS = 30 * 60 * 1000L
+
         private const val KEY_LAT = "latitude"
         private const val KEY_LNG = "longitude"
         private const val KEY_LOCATION_NAME = "location_name"
@@ -137,5 +155,7 @@ class SandhyaPrefs(context: Context) {
         private const val KEY_BG_URI = "background_uri"
         private const val KEY_SOUND_URI = "alarm_sound_uri"
         private const val KEY_SOUND_TITLE = "alarm_sound_title"
+        private const val KEY_LAST_FIX = "last_location_fix"
+        private const val KEY_LOCATION_MODE = "location_mode"
     }
 }

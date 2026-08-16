@@ -15,6 +15,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
+import com.trisandhya.sunrisealarm.MainActivity
 import com.trisandhya.sunrisealarm.R
 import com.trisandhya.sunrisealarm.model.Junction
 import com.trisandhya.sunrisealarm.ui.AlarmActivity
@@ -47,6 +48,10 @@ object AlarmNotifier {
     // Keeps the low-priority "snoozed" notification on its own id, distinct from the
     // ringing alarm notification (which uses junction.requestCode).
     private const val SNOOZED_NOTIF_OFFSET = 5000
+
+    // Request-code offsets for the "tap to open the app" content PendingIntents.
+    private const val CONTENT_INTENT_OFFSET = 6000
+    private const val SNOOZED_CONTENT_OFFSET = 7000
 
     private val timeFormat = DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault())
 
@@ -147,8 +152,9 @@ object AlarmNotifier {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(true)
             .setOngoing(!loud) // the FGS notification is ongoing until dismissed/timeout
-            .setContentIntent(fullScreenPending)
-            // Wakes the screen when locked; degrades to a heads-up banner otherwise.
+            // Tapping the body opens the app (to change settings); the full-screen
+            // intent still shows the alarm surface over the lock screen.
+            .setContentIntent(appContentIntent(context, junction.requestCode + CONTENT_INTENT_OFFSET))
             .setFullScreenIntent(fullScreenPending, true)
             .addAction(
                 0,
@@ -208,6 +214,7 @@ object AlarmNotifier {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOngoing(true)
             .setSilent(true)
+            .setContentIntent(appContentIntent(context, junction.requestCode + SNOOZED_CONTENT_OFFSET))
             .addAction(
                 0,
                 context.getString(R.string.cancel_snooze),
@@ -217,6 +224,19 @@ object AlarmNotifier {
 
         NotificationManagerCompat.from(context)
             .notify(junction.requestCode + SNOOZED_NOTIF_OFFSET, notification)
+    }
+
+    /** Opens the app's main screen when the notification body is tapped. */
+    private fun appContentIntent(context: Context, requestCode: Int): PendingIntent {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        }
+        return PendingIntent.getActivity(
+            context,
+            requestCode,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
     }
 
     /** Broadcast PendingIntent for a notification action button, keyed off the junction. */
