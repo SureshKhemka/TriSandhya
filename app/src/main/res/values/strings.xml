@@ -116,12 +116,24 @@
 
     <!-- Permission banners -->
     <string name="banner_exact_alarm">Exact alarms are turned off for TriSandhya, so alarms may fire late. Enable them for on-time reminders.</string>
+    <string name="banner_battery">Battery optimization is on for TriSandhya, so alarms may not fire. Allow it to run in the background.</string>
+    <string name="banner_background_restricted">TriSandhya is restricted from running in the background, so alarms won\'t fire. Allow background activity in Settings.</string>
     <string name="banner_notifications">Notifications are blocked, so alarms will be scheduled but you won\'t see or hear them.</string>
 
     <!-- Errors -->
     <string name="error_location_permission">Location permission is required to compute your solar times.</string>
     <string name="error_location_unavailable">Could not get a location fix. Check that location is enabled.</string>
     <string name="error_location_failed">Location error: %1$s</string>
+
+    <!-- Location updates -->
+    <string name="location_mode_label">Update location</string>
+    <string name="location_mode_dialog_title">Update location</string>
+    <string name="location_mode_open">When I open the app</string>
+    <string name="location_mode_daily">Once a day</string>
+    <string name="location_mode_background">Every few hours</string>
+    <string name="location_background_denied">Background updates need \'Allow all the time\' location.</string>
+    <string name="channel_location">Location updates</string>
+    <string name="location_updating">Updating location…</string>
 
     <!-- Content descriptions -->
     <string name="cd_refresh">Refresh location and times</string>

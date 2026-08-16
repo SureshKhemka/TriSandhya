@@ -1,7 +1,9 @@
 package com.trisandhya.sunrisealarm
 
+import android.app.ActivityManager
 import android.app.Application
-import android.location.Geocoder
+import android.os.Build
+import android.os.PowerManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.android.gms.location.LocationServices
@@ -11,8 +13,10 @@ import com.trisandhya.sunrisealarm.alarm.SandhyaScheduler
 import com.trisandhya.sunrisealarm.data.SandhyaPrefs
 import com.trisandhya.sunrisealarm.model.Junction
 import com.trisandhya.sunrisealarm.solar.SolarCalculator
+import com.trisandhya.sunrisealarm.util.Geocoding
 import com.trisandhya.sunrisealarm.util.RelativeTime
 import com.trisandhya.sunrisealarm.work.DailyRescheduleWorker
+import com.trisandhya.sunrisealarm.work.LocationUpdateWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,7 +26,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.ZonedDateTime
-import java.util.Locale
 
 /** What one junction row shows. */
 data class JunctionRow(
@@ -44,9 +47,12 @@ data class UiState(
     val nextAlarm: Pair<Junction, ZonedDateTime>? = null,
     val statusText: String? = null,
     val needsExactAlarmPermission: Boolean = false,
+    val needsBatteryExemption: Boolean = false,
+    val isBackgroundRestricted: Boolean = false,
     val backgroundKey: String = SandhyaPrefs.DEFAULT_BACKGROUND_KEY,
     val backgroundUri: String? = null,
-    val alarmSoundTitle: String? = null
+    val alarmSoundTitle: String? = null,
+    val locationMode: String = SandhyaPrefs.LOCATION_OPEN
 )
 
 /** Actions a Snackbar can offer when something goes wrong. */
@@ -89,22 +95,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // Location
     // ------------------------------------------------------------------------------
 
+    /**
+     * @param silent an automatic refresh (e.g. on app open) — no loading spinner and
+     *   failures are swallowed, since a cached fix keeps the screen usable.
+     */
     @Suppress("MissingPermission")
-    fun refreshLocation(hasFinePermission: Boolean, hasCoarsePermission: Boolean) {
+    fun refreshLocation(hasFinePermission: Boolean, hasCoarsePermission: Boolean, silent: Boolean = false) {
         if (!hasFinePermission && !hasCoarsePermission) {
-            emit(
-                UiEvent.Error(
-                    string(R.string.error_location_permission),
-                    ErrorAction.OPEN_APP_SETTINGS
-                )
-            )
+            if (!silent) {
+                emit(UiEvent.Error(string(R.string.error_location_permission), ErrorAction.OPEN_APP_SETTINGS))
+            }
             return
         }
 
-        _state.value = _state.value.copy(
-            loading = true,
-            statusText = string(R.string.status_getting_location)
-        )
+        if (!silent) {
+            _state.value = _state.value.copy(loading = true, statusText = string(R.string.status_getting_location))
+        }
 
         val priority = if (hasFinePermission) {
             Priority.PRIORITY_HIGH_ACCURACY
@@ -123,33 +129,39 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                             if (last != null) {
                                 onLocationFixed(last.latitude, last.longitude)
                             } else {
-                                failLocation(string(R.string.error_location_unavailable))
+                                failLocation(string(R.string.error_location_unavailable), silent)
                             }
                         }
-                        .addOnFailureListener { e -> failLocation(locationError(e)) }
+                        .addOnFailureListener { e -> failLocation(locationError(e), silent) }
                 }
             }
-            .addOnFailureListener { e -> failLocation(locationError(e)) }
+            .addOnFailureListener { e -> failLocation(locationError(e), silent) }
     }
+
+    /** True when there's a cached fix but it's stale enough to auto-refresh on open. */
+    fun shouldRefreshOnOpen(): Boolean =
+        prefs.hasLocation() &&
+            System.currentTimeMillis() - prefs.lastLocationFixMillis > SandhyaPrefs.LOCATION_STALE_MS
 
     private fun locationError(e: Exception) =
         string(R.string.error_location_failed, e.message ?: "unknown")
 
-    private fun failLocation(message: String) {
+    private fun failLocation(message: String, silent: Boolean = false) {
         _state.value = _state.value.copy(loading = false, statusText = null)
         // If a previous fix is cached the screen is still usable, so this is a
         // retryable warning rather than a dead end.
-        emit(UiEvent.Error(message, ErrorAction.RETRY))
+        if (!silent) emit(UiEvent.Error(message, ErrorAction.RETRY))
     }
 
     private fun onLocationFixed(latitude: Double, longitude: Double) {
         prefs.latitude = latitude
         prefs.longitude = longitude
-
-        _state.value = _state.value.copy(statusText = string(R.string.status_resolving_location))
+        prefs.lastLocationFixMillis = System.currentTimeMillis()
 
         viewModelScope.launch {
-            val name = withContext(Dispatchers.IO) { resolveLocationName(latitude, longitude) }
+            val name = withContext(Dispatchers.IO) {
+                Geocoding.resolveName(getApplication(), latitude, longitude)
+            }
             prefs.locationName = name
             _state.value = _state.value.copy(loading = false, statusText = null)
             recompute()
@@ -157,31 +169,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun resolveLocationName(latitude: Double, longitude: Double): String = try {
-        @Suppress("DEPRECATION")
-        val addresses = Geocoder(getApplication(), Locale.getDefault())
-            .getFromLocation(latitude, longitude, 1)
-
-        val address = addresses?.firstOrNull()
-        if (address == null) {
-            formatCoords(latitude, longitude)
-        } else {
-            listOfNotNull(address.locality, address.adminArea, address.countryName)
-                .distinct()
-                .joinToString(", ")
-                .ifEmpty { formatCoords(latitude, longitude) }
-        }
-    } catch (e: Exception) {
-        // Geocoding is a nicety; coordinates are a perfectly usable fallback.
-        formatCoords(latitude, longitude)
-    }
-
-    private fun formatCoords(latitude: Double, longitude: Double) =
-        String.format(Locale.getDefault(), "%.4f°, %.4f°", latitude, longitude)
-
     // ------------------------------------------------------------------------------
     // User settings
     // ------------------------------------------------------------------------------
+
+    /**
+     * Persists the location-update mode and (de)schedules the background worker. The
+     * caller is responsible for ensuring any needed permission is granted first.
+     */
+    fun setLocationMode(mode: String) {
+        prefs.locationMode = mode
+        val app = getApplication<Application>()
+        when (mode) {
+            SandhyaPrefs.LOCATION_DAILY -> LocationUpdateWorker.scheduleDaily(app)
+            SandhyaPrefs.LOCATION_BACKGROUND -> LocationUpdateWorker.scheduleBackground(app)
+            else -> LocationUpdateWorker.cancel(app)
+        }
+        recompute()
+    }
 
     fun setEnabled(junction: Junction, enabled: Boolean) {
         prefs.setEnabled(junction, enabled)
@@ -199,7 +204,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             scheduler.cancel(junction)
             emit(UiEvent.Message(string(R.string.alarm_cancelled, string(junction.labelRes))))
         }
-        refreshExactAlarmWarning()
+        refreshSystemWarnings()
     }
 
     fun setOffsetMinutes(junction: Junction, minutes: Int) {
@@ -242,7 +247,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         scheduler.syncAll()
         if (prefs.anyEnabled()) DailyRescheduleWorker.enqueue(getApplication())
         recompute()
-        refreshExactAlarmWarning()
+        refreshSystemWarnings()
     }
 
     // ------------------------------------------------------------------------------
@@ -275,7 +280,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 nextAlarm = null,
                 backgroundKey = prefs.backgroundKey,
                 backgroundUri = prefs.backgroundUri,
-                alarmSoundTitle = prefs.alarmSoundTitle
+                alarmSoundTitle = prefs.alarmSoundTitle,
+            locationMode = prefs.locationMode
             )
             return
         }
@@ -308,14 +314,31 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             nextAlarm = scheduler.nextEnabledAlarm(),
             backgroundKey = prefs.backgroundKey,
             backgroundUri = prefs.backgroundUri,
-            alarmSoundTitle = prefs.alarmSoundTitle
+            alarmSoundTitle = prefs.alarmSoundTitle,
+            locationMode = prefs.locationMode
         )
     }
 
-    fun refreshExactAlarmWarning() {
+    fun refreshSystemWarnings() {
+        val anyEnabled = prefs.anyEnabled()
         _state.value = _state.value.copy(
-            needsExactAlarmPermission = prefs.anyEnabled() && !scheduler.canScheduleExact()
+            needsExactAlarmPermission = anyEnabled && !scheduler.canScheduleExact(),
+            // Battery optimization can defer/kill an exact alarm — the likeliest reason
+            // an alarm silently fails to fire.
+            needsBatteryExemption = anyEnabled && !isIgnoringBatteryOptimizations(),
+            isBackgroundRestricted = anyEnabled && isBackgroundRestricted()
         )
+    }
+
+    private fun isIgnoringBatteryOptimizations(): Boolean {
+        val power = getApplication<Application>().getSystemService(PowerManager::class.java)
+        return power?.isIgnoringBatteryOptimizations(getApplication<Application>().packageName) ?: true
+    }
+
+    private fun isBackgroundRestricted(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return false
+        val am = getApplication<Application>().getSystemService(ActivityManager::class.java)
+        return am?.isBackgroundRestricted == true
     }
 
     private fun formatRelative(target: ZonedDateTime): String =

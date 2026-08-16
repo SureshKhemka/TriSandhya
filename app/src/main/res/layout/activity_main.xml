@@ -341,6 +341,37 @@
 
             </LinearLayout>
 
+            <!-- ──────────────────────────── LOCATION UPDATES ──────────────────────────── -->
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="12dp"
+                android:paddingEnd="4dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/location_mode_label"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="14sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_location_mode"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textAllCaps="false"
+                    android:textColor="@color/accent"
+                    android:textSize="14sp"
+                    tools:text="When I open the app" />
+
+            </LinearLayout>
+
             <!-- ──────────────────────────────── INFO TEXT ──────────────────────────────── -->
 
             <TextView
